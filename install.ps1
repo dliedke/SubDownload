@@ -1,8 +1,9 @@
 #requires -Version 5.1
 <#
 .SYNOPSIS
-    Instala o SubDownload e registra o item "Baixar Legenda (PT-BR)" no menu de
-    contexto do Explorer para arquivos .mkv e .mp4.
+    Instala o SubDownload e registra os itens "Baixar Legenda (PT-BR)",
+    "Baixar Legendas Alternativas" e "Limpar Legendas Alternativas (.1, .2)"
+    no menu de contexto do Explorer para arquivos .mkv e .mp4.
 
 .DESCRIPTION
     - Publica o app como um executavel unico, autocontido (nao exige .NET
@@ -48,27 +49,60 @@ if (-not (Test-Path $exePath)) {
 function Register-ContextMenu {
     param(
         [Parameter(Mandatory)] [string] $Extension,   # ex: ".mkv"
-        [Parameter(Mandatory)] [string] $ExePath
+        [Parameter(Mandatory)] [string] $ExePath,
+        [Parameter(Mandatory)] [string] $KeyName,     # ex: "SubDownloadPTBR"
+        [Parameter(Mandatory)] [string] $MenuText,    # ex: "Baixar Legenda (PT-BR)"
+        [string] $ExtraArgs = ''                      # ex: "--clean-alts"
     )
 
-    $keyPath = "HKCU:\Software\Classes\SystemFileAssociations\$Extension\shell\SubDownloadPTBR"
+    $keyPath = "HKCU:\Software\Classes\SystemFileAssociations\$Extension\shell\$KeyName"
     $cmdPath = "$keyPath\command"
 
     New-Item -Path $keyPath -Force | Out-Null
-    Set-ItemProperty -Path $keyPath -Name '(default)' -Value 'Baixar Legenda (PT-BR)'
+    Set-ItemProperty -Path $keyPath -Name '(default)' -Value $MenuText
     Set-ItemProperty -Path $keyPath -Name 'Icon' -Value "$ExePath,0"
 
-    New-Item -Path $cmdPath -Force | Out-Null
-    Set-ItemProperty -Path $cmdPath -Name '(default)' -Value "`"$ExePath`" `"%1`""
+    $commandLine = if ($ExtraArgs) { "`"$ExePath`" $ExtraArgs `"%1`"" } else { "`"$ExePath`" `"%1`"" }
 
-    Write-Host "    Registrado para $Extension" -ForegroundColor Green
+    New-Item -Path $cmdPath -Force | Out-Null
+    Set-ItemProperty -Path $cmdPath -Name '(default)' -Value $commandLine
+
+    Write-Host "    Registrado '$MenuText' para $Extension" -ForegroundColor Green
 }
 
 Write-Host "==> Registrando menu de contexto (HKCU, sem precisar de admin)..." -ForegroundColor Cyan
-Register-ContextMenu -Extension '.mkv' -ExePath $exePath
-Register-ContextMenu -Extension '.mp4' -ExePath $exePath
+# O Explorer ordena os itens pelo nome da chave do registro (ordem alfabetica),
+# entao o prefixo numerico abaixo garante a ordem: Baixar Legenda -> Baixar
+# Legendas Alternativas -> Limpar Legendas Alternativas.
+foreach ($ext in '.mkv', '.mp4') {
+    Register-ContextMenu -Extension $ext -ExePath $exePath `
+        -KeyName 'SubDownload1BaixarPTBR' -MenuText 'Baixar Legenda (PT-BR)'
+    Register-ContextMenu -Extension $ext -ExePath $exePath `
+        -KeyName 'SubDownload2BaixarAlts' -MenuText 'Baixar Legendas Alternativas' `
+        -ExtraArgs '--download-alts'
+    Register-ContextMenu -Extension $ext -ExePath $exePath `
+        -KeyName 'SubDownload3ClearAlts' -MenuText 'Limpar Legendas Alternativas (.1, .2)' `
+        -ExtraArgs '--clean-alts'
+
+    # Remove chaves antigas (versoes anteriores do instalador), se existirem.
+    foreach ($oldKeyName in 'SubDownloadPTBR', 'SubDownloadClearAlts', 'SubDownload2ClearAlts') {
+        $oldKeyPath = "HKCU:\Software\Classes\SystemFileAssociations\$ext\shell\$oldKeyName"
+        if (Test-Path $oldKeyPath) {
+            Remove-Item -Path $oldKeyPath -Recurse -Force
+        }
+    }
+}
+
+Write-Host "==> Reiniciando o Explorer para aplicar as mudancas..." -ForegroundColor Cyan
+Stop-Process -Name explorer -Force -ErrorAction SilentlyContinue
+Start-Sleep -Milliseconds 500
+if (-not (Get-Process -Name explorer -ErrorAction SilentlyContinue)) {
+    Start-Process explorer.exe
+}
 
 Write-Host ""
 Write-Host "Instalacao concluida!" -ForegroundColor Green
 Write-Host "Clique com o botao direito em um arquivo .mkv ou .mp4 e escolha 'Baixar Legenda (PT-BR)'."
+Write-Host "Se a principal estiver fora de sincronia, escolha 'Baixar Legendas Alternativas'."
+Write-Host "Para limpar as alternativas baixadas (.1.srt, .2.srt), escolha 'Limpar Legendas Alternativas (.1, .2)'."
 Write-Host "Para desinstalar, execute .\uninstall.ps1"

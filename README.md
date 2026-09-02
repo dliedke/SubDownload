@@ -1,7 +1,13 @@
 # SubDownload
 
-Adiciona um item **"Baixar Legenda (PT-BR)"** ao menu de contexto do Windows
-Explorer para arquivos `.mkv` e `.mp4`. Ao clicar, o app:
+Adiciona três itens ao menu de contexto do Windows Explorer para arquivos
+`.mkv` e `.mp4`: **"Baixar Legenda (PT-BR)"**, **"Baixar Legendas
+Alternativas"** e **"Limpar Legendas Alternativas (.1, .2)"**.
+
+## Baixar Legenda (PT-BR)
+
+Como a legenda principal quase sempre já serve, esse item baixa **só o
+melhor match**. Ao clicar, o app:
 
 1. Extrai o nome do filme + ano do nome do arquivo (ex:
    `Coyote.vs.Acme.2026.1080p.HEVC.x265.RMTeam.mkv` -> `Coyote.vs.Acme.2026`).
@@ -21,14 +27,34 @@ Explorer para arquivos `.mkv` e `.mp4`. Ao clicar, o app:
    legenda inteira for (nesse caso o bloco inteiro é descartado e a
    numeração é reajustada).
 6. Salva o `.srt` na mesma pasta do vídeo, com o mesmo nome do arquivo (ex:
-   `Coyote.vs.Acme.2026.1080p.HEVC.x265.RMTeam.srt`).
-7. Se outros candidatos parecidos também tiverem pt-BR/pt pronta, baixa até
-   2 alternativas extras e salva como `NomeDoArquivo.1.srt`,
-   `NomeDoArquivo.2.srt` — pra trocar manualmente se a principal estiver
-   fora de sincronia (o player só carrega automaticamente a que tem o nome
-   exato do vídeo).
-8. Se nenhum dos candidatos pesquisados tiver pt-BR/pt pronta, o app avisa e
+   `Coyote.vs.Acme.2026.1080p.HEVC.x265.RMTeam.srt`), pra tocar
+   automaticamente no player.
+7. Se nenhum dos candidatos pesquisados tiver pt-BR/pt pronta, o app avisa e
    não baixa nada (não tenta traduzir).
+8. Depois de salvar, abre o vídeo automaticamente no player padrão associado
+   à extensão (ex: MPC-HC), já com a legenda pronta para carregar. Se não
+   conseguir abrir (nenhum player associado, etc.), só avisa e não
+   interrompe o restante do processo.
+
+Se essa legenda estiver fora de sincronia, use **"Baixar Legendas
+Alternativas"**.
+
+## Baixar Legendas Alternativas
+
+Faz a mesma pesquisa/ranking, mas pula o melhor match (já baixado pelo item
+acima) e baixa até 2 dos próximos mais parecidos que também tenham pt-BR/pt
+pronta — salvando como `NomeDoArquivo.1.srt`, `NomeDoArquivo.2.srt` na mesma
+pasta. Não sobrescreve nem mexe na legenda principal; o usuário troca o nome
+manualmente para `.srt` se precisar usar uma delas. Se não houver nenhuma
+alternativa disponível, o app avisa e não baixa nada.
+
+## Limpar Legendas Alternativas (.1, .2)
+
+Serve para descartar as alternativas baixadas depois de confirmar que a
+principal está boa. Ao clicar em um `.mkv`/`.mp4`, o app apaga
+`NomeDoArquivo.1.srt`, `NomeDoArquivo.2.srt` etc. da mesma pasta — a legenda
+principal nunca é tocada. Se não houver nenhuma alternativa, o app só avisa
+e não faz nada.
 
 ## Estrutura
 
@@ -86,14 +112,20 @@ cd C:\GitLab\SubDownload
 O script:
 - Publica `SubDownload.exe` como executável único, self-contained, `win-x64`.
 - Copia para `%LOCALAPPDATA%\SubDownload\SubDownload.exe`.
-- Registra o menu de contexto em `HKCU:\Software\Classes\SystemFileAssociations`
-  para `.mkv` e `.mp4` — **não precisa de administrador** e vale só para o
-  usuário atual.
-- O item do menu usa um ícone próprio (`assets/SubDownload.ico`, embutido no
-  `.exe` via `<ApplicationIcon>`) em vez do ícone genérico do executável.
+- Registra os três itens de menu de contexto em
+  `HKCU:\Software\Classes\SystemFileAssociations` para `.mkv` e `.mp4` —
+  **não precisa de administrador** e vale só para o usuário atual. A ordem
+  no menu (Baixar Legenda -> Baixar Legendas Alternativas -> Limpar
+  Legendas Alternativas) é garantida pelo prefixo numérico no nome das
+  chaves do registro.
+- Os itens do menu usam um ícone próprio (`assets/SubDownload.ico`, embutido
+  no `.exe` via `<ApplicationIcon>`) em vez do ícone genérico do executável.
+- Reinicia o Explorer no final para o novo menu de contexto aparecer sem
+  precisar relogar.
 
 Depois disso, clique com o botão direito num `.mkv` ou `.mp4` no Explorer e
-escolha **"Baixar Legenda (PT-BR)"**.
+escolha **"Baixar Legenda (PT-BR)"**, **"Baixar Legendas Alternativas"** ou
+**"Limpar Legendas Alternativas (.1, .2)"**.
 
 ## Desinstalação
 
@@ -105,6 +137,8 @@ escolha **"Baixar Legenda (PT-BR)"**.
 
 ```powershell
 SubDownload.exe "C:\Filmes\Coyote.vs.Acme.2026.1080p.HEVC.x265.RMTeam.mkv"
+SubDownload.exe --download-alts "C:\Filmes\Coyote.vs.Acme.2026.1080p.HEVC.x265.RMTeam.mkv"
+SubDownload.exe --clean-alts "C:\Filmes\Coyote.vs.Acme.2026.1080p.HEVC.x265.RMTeam.mkv"
 ```
 
 ## Limitações conhecidas
