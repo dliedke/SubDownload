@@ -25,4 +25,10 @@ internal static partial class MovieNameParser
         var endOfYear = match.Index + match.Length;
         return fileNameNoExt[..endOfYear];
     }
+
+    public static int? TryGetYear(string fileNameNoExt)
+    {
+        var match = YearRegex().Match(fileNameNoExt);
+        return match.Success ? int.Parse(match.Value) : null;
+    }
 }

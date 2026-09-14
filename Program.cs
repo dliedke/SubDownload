@@ -1,8 +1,8 @@
 // SubDownload
-// Baixa a legenda em Portugues (Brasil) de um filme, a partir do site subtitlecat.com,
-// pesquisando pelo nome do arquivo de video passado como argumento (integracao com o
-// menu de contexto do Windows Explorer). Salva o .srt na mesma pasta do video, com o
-// mesmo nome do arquivo.
+// Baixa a legenda em Portugues (Brasil) de um filme — primeiro tenta o OpenSubtitles e,
+// se nao achar, o subtitlecat.com — pesquisando pelo arquivo de video passado como
+// argumento (integracao com o menu de contexto do Windows Explorer). Salva o .srt na
+// mesma pasta do video, com o mesmo nome do arquivo.
 
 using System.Diagnostics;
 using System.Net;
@@ -13,7 +13,6 @@ namespace SubDownload;
 
 internal static class Program
 {
-    private const string BaseUrl = "https://www.subtitlecat.com";
     private const string CleanAltsFlag = "--clean-alts";
     private const string DownloadAltsFlag = "--download-alts";
     private static readonly string[] SupportedExtensions = { ".mkv", ".mp4" };
@@ -34,7 +33,7 @@ internal static class Program
 
         if (!validMode || args.Length <= pathArgIndex || string.IsNullOrWhiteSpace(args[pathArgIndex]))
         {
-            Console.WriteLine("=== SubDownload - legenda PT-BR (subtitlecat.com) ===\n");
+            Console.WriteLine("=== SubDownload - legenda PT-BR (OpenSubtitles / subtitlecat.com) ===\n");
             Console.WriteLine("Uso: SubDownload.exe \"caminho\\para\\filme.mkv\"");
             Console.WriteLine($"     SubDownload.exe {DownloadAltsFlag} \"caminho\\para\\filme.mkv\"");
             Console.WriteLine($"     SubDownload.exe {CleanAltsFlag} \"caminho\\para\\filme.mkv\"");
@@ -63,7 +62,7 @@ internal static class Program
 
     private static async Task<int> RunAsync(string videoPath)
     {
-        Console.WriteLine("=== SubDownload - legenda PT-BR (subtitlecat.com) ===\n");
+        Console.WriteLine("=== SubDownload - legenda PT-BR (OpenSubtitles / subtitlecat.com) ===\n");
 
         if (!File.Exists(videoPath))
         {
@@ -85,41 +84,22 @@ internal static class Program
 
         using var http = CreateHttpClient();
 
-        var ranked = await SearchAndRankAsync(http, fileNameNoExt);
-        if (ranked is null) return Finish(1);
-
-        // Baixa so a legenda do melhor match (na pratica, quase sempre ja serve). Se ele
-        // nao tiver pt-BR (ou pt) JA PRONTA, vai tentando os proximos mais parecidos (sem
-        // acionar nenhuma traducao — so usa o que o site ja tem pronto). As demais so sao
-        // baixadas sob demanda, pelo menu "Baixar Legendas Alternativas".
-        var (found, lastAvailableLangs) = await FindReadySubtitlesAsync(http, ranked, skip: 0, take: 1);
+        // Baixa so a legenda mais indicada (na pratica, quase sempre ja serve): primeiro do
+        // OpenSubtitles e, se ele nao tiver pt-BR/pt, do subtitlecat.com (sem acionar
+        // nenhuma traducao — so usa o que ja existe pronto). As demais so sao baixadas sob
+        // demanda, pelo menu "Baixar Legendas Alternativas".
+        var found = await CollectReadySubtitlesAsync(http, videoPath, fileNameNoExt, skip: 0, take: 1);
 
         if (found.Count == 0)
         {
             Console.WriteLine();
-            Console.WriteLine("[ERRO] Nenhum dos resultados pesquisados tem legenda em Portugues (Brasil) pronta para download.");
-            if (lastAvailableLangs.Count > 0)
-                Console.WriteLine("Idiomas disponiveis no ultimo resultado verificado: " + string.Join(", ", lastAvailableLangs));
+            Console.WriteLine("[ERRO] Nenhuma legenda em Portugues (Brasil) pronta para download no OpenSubtitles nem no subtitlecat.com.");
             return Finish(1);
         }
 
         Console.WriteLine();
-        var utf8NoBom = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false);
-        var (_, srtUrl) = found[0];
-
-        Console.WriteLine($"Baixando legenda: {srtUrl}");
-        var srtBytes = await http.GetByteArrayAsync(srtUrl);
-        var srtText = utf8NoBom.GetString(srtBytes);
-
-        var cleanResult = SdhCleaner.RemoveSdh(srtText);
-        if (cleanResult.BlocksModified > 0 || cleanResult.BlocksRemoved > 0)
-        {
-            Console.WriteLine($"  Removendo SDH: {cleanResult.BlocksModified} fala(s) limpa(s), " +
-                               $"{cleanResult.BlocksRemoved} bloco(s) 100% SDH removido(s).");
-        }
-
         var destPath = Path.Combine(folder, fileNameNoExt + ".srt");
-        await File.WriteAllTextAsync(destPath, cleanResult.Srt, utf8NoBom);
+        await DownloadAndSaveAsync(http, found[0], destPath, "Baixando legenda");
 
         Console.WriteLine();
         Console.WriteLine($"[OK] Legenda salva em: {destPath}");
@@ -131,7 +111,7 @@ internal static class Program
 
     private static async Task<int> RunDownloadAltsAsync(string videoPath)
     {
-        Console.WriteLine("=== SubDownload - legendas alternativas (subtitlecat.com) ===\n");
+        Console.WriteLine("=== SubDownload - legendas alternativas (OpenSubtitles / subtitlecat.com) ===\n");
 
         if (!File.Exists(videoPath))
         {
@@ -153,45 +133,26 @@ internal static class Program
 
         using var http = CreateHttpClient();
 
-        var ranked = await SearchAndRankAsync(http, fileNameNoExt);
-        if (ranked is null) return Finish(1);
-
-        // Pula o melhor match (esse ja foi baixado como legenda principal pelo outro menu)
-        // e baixa os proximos mais parecidos que tambem tenham pt-BR/pt pronta.
-        var (found, lastAvailableLangs) = await FindReadySubtitlesAsync(http, ranked, skip: 1, take: MaxAlternates);
+        // Pula a mais indicada (essa ja foi baixada como legenda principal pelo outro menu)
+        // e baixa as proximas, na mesma ordem: OpenSubtitles primeiro, depois subtitlecat.com.
+        var found = await CollectReadySubtitlesAsync(http, videoPath, fileNameNoExt, skip: 1, take: MaxAlternates);
 
         if (found.Count == 0)
         {
             Console.WriteLine();
             Console.WriteLine("[ERRO] Nenhuma legenda alternativa em Portugues (Brasil) pronta para download alem da principal.");
-            if (lastAvailableLangs.Count > 0)
-                Console.WriteLine("Idiomas disponiveis no ultimo resultado verificado: " + string.Join(", ", lastAvailableLangs));
             return Finish(1);
         }
 
         Console.WriteLine();
         var savedPaths = new List<string>();
-        var utf8NoBom = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false);
 
         for (var i = 0; i < found.Count; i++)
         {
-            var (_, srtUrl) = found[i];
-
-            Console.WriteLine($"Baixando legenda alternativa ({i + 1}/{found.Count}): {srtUrl}");
-            var srtBytes = await http.GetByteArrayAsync(srtUrl);
-            var srtText = utf8NoBom.GetString(srtBytes);
-
-            var cleanResult = SdhCleaner.RemoveSdh(srtText);
-            if (cleanResult.BlocksModified > 0 || cleanResult.BlocksRemoved > 0)
-            {
-                Console.WriteLine($"  Removendo SDH: {cleanResult.BlocksModified} fala(s) limpa(s), " +
-                                   $"{cleanResult.BlocksRemoved} bloco(s) 100% SDH removido(s).");
-            }
-
             // Alternativas ganham sufixo .1, .2 etc — o usuario troca manualmente pra .srt
             // se a principal estiver fora de sincronia.
             var destPath = Path.Combine(folder, fileNameNoExt + $".{i + 1}.srt");
-            await File.WriteAllTextAsync(destPath, cleanResult.Srt, utf8NoBom);
+            await DownloadAndSaveAsync(http, found[i], destPath, $"Baixando legenda alternativa ({i + 1}/{found.Count})");
             savedPaths.Add(destPath);
         }
 
@@ -204,95 +165,81 @@ internal static class Program
         return Finish(0);
     }
 
-    private static async Task<List<ReleaseMatcher.RankedCandidate>?> SearchAndRankAsync(HttpClient http, string fileNameNoExt)
-    {
-        var searchQuery = MovieNameParser.BuildSearchQuery(fileNameNoExt);
-        Console.WriteLine($"Pesquisa: {searchQuery}");
-
-        var searchUrl = $"{BaseUrl}/index.php?search={Uri.EscapeDataString(searchQuery)}";
-        Console.WriteLine($"\nBuscando em: {searchUrl}");
-        var searchHtml = await http.GetStringAsync(searchUrl);
-
-        var candidates = SubtitleCatParser.ParseSearchResults(searchHtml);
-        if (candidates.Count == 0)
-        {
-            Console.WriteLine("[ERRO] Nenhum resultado encontrado para essa pesquisa.");
-            return null;
-        }
-
-        Console.WriteLine($"\n{candidates.Count} resultado(s) encontrado(s):");
-        foreach (var c in candidates)
-            Console.WriteLine($"  - {c.Title}");
-
-        var ranked = ReleaseMatcher.RankBySimilarity(fileNameNoExt, candidates);
-        Console.WriteLine($"\n>> Melhor correspondencia: {ranked[0].Candidate.Title}");
-        return ranked;
-    }
-
     /// <summary>
-    /// Percorre os candidatos ranqueados (do mais parecido ao menos parecido) e coleta
-    /// legendas pt-BR/pt JA PRONTAS para download (nunca aciona traducao). Pula os
-    /// primeiros <paramref name="skip"/> matches encontrados (ex: o que ja foi baixado
-    /// como principal) e para depois de coletar <paramref name="take"/> novos.
+    /// Percorre as legendas pt-BR/pt JA PRONTAS, na ordem de preferencia (OpenSubtitles
+    /// primeiro, subtitlecat.com so se ainda faltar), pulando as primeiras
+    /// <paramref name="skip"/> (ex: a que ja foi baixada como principal) e parando depois
+    /// de coletar <paramref name="take"/> novas.
     /// </summary>
-    private static async Task<(List<(SubtitleCandidate Candidate, string SrtUrl)> Found, List<string> LastAvailableLangs)> FindReadySubtitlesAsync(
-        HttpClient http, List<ReleaseMatcher.RankedCandidate> ranked, int skip, int take)
+    private static async Task<List<ReadySubtitle>> CollectReadySubtitlesAsync(
+        HttpClient http, string videoPath, string fileNameNoExt, int skip, int take)
     {
-        const int MaxCandidatesToCheck = 20;
-        var found = new List<(SubtitleCandidate Candidate, string SrtUrl)>();
+        var found = new List<ReadySubtitle>();
         var seenUrls = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        List<string> lastAvailableLangs = new();
         var matched = 0;
 
-        foreach (var rankedCandidate in ranked.Take(MaxCandidatesToCheck))
+        Console.WriteLine($"Pesquisa: {MovieNameParser.BuildSearchQuery(fileNameNoExt)}");
+
+        await foreach (var subtitle in EnumerateAllSourcesAsync(http, videoPath, fileNameNoExt))
         {
-            if (found.Count >= take) break;
+            // Evita contar/salvar a mesma legenda duas vezes (candidatos diferentes
+            // podem apontar pro mesmo arquivo .srt).
+            if (!seenUrls.Add(subtitle.Url))
+                continue;
 
-            var candidate = rankedCandidate.Candidate;
-            var pageUrl = $"{BaseUrl}/{candidate.Href}";
-
-            string pageHtml;
-            try
+            matched++;
+            if (matched <= skip)
             {
-                pageHtml = await http.GetStringAsync(pageUrl);
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"  [aviso] falha ao abrir {candidate.Title}: {ex.Message}");
+                Console.WriteLine($"  (pulando \"{subtitle.Title}\" - ja usada como legenda principal)");
                 continue;
             }
 
-            var link = SubtitleCatParser.FindSubtitleDownloadLink(pageHtml, "pt-BR")
-                       ?? SubtitleCatParser.FindSubtitleDownloadLink(pageHtml, "pt");
-
-            if (link is not null)
-            {
-                var srtUrl = link.StartsWith("http", StringComparison.OrdinalIgnoreCase)
-                    ? link
-                    : $"{BaseUrl}/{link.TrimStart('/')}";
-
-                // Evita contar/salvar a mesma legenda duas vezes (candidatos diferentes
-                // podem apontar pro mesmo arquivo .srt).
-                if (!seenUrls.Add(srtUrl))
-                    continue;
-
-                matched++;
-                if (matched <= skip)
-                {
-                    Console.WriteLine($"  (pulando \"{candidate.Title}\" - ja usada como legenda principal)");
-                    continue;
-                }
-
-                found.Add((candidate, srtUrl));
-                Console.WriteLine($"  -> pt-BR/pt pronta em: {candidate.Title}");
-                continue;
-            }
-
-            lastAvailableLangs = SubtitleCatParser.ListAvailableLanguages(pageHtml);
-            Console.WriteLine($"  (sem pt-BR pronta em \"{candidate.Title}\", tentando o proximo mais parecido...)");
+            found.Add(subtitle);
+            Console.WriteLine($"  -> pt-BR/pt pronta ({subtitle.Source}) em: {subtitle.Title}");
+            if (found.Count >= take)
+                break;
         }
 
-        return (found, lastAvailableLangs);
+        return found;
+    }
+
+    private static async IAsyncEnumerable<ReadySubtitle> EnumerateAllSourcesAsync(HttpClient http, string videoPath, string fileNameNoExt)
+    {
+        Console.WriteLine($"\n--- {OpenSubtitlesClient.SourceName} ---");
+        List<ReadySubtitle> openSubtitles;
+        try
+        {
+            openSubtitles = await OpenSubtitlesClient.FindReadySubtitlesAsync(http, videoPath, fileNameNoExt);
+        }
+        catch (Exception ex)
+        {
+            // Falha no OpenSubtitles (fora do ar, limite de requisicoes etc.) nao impede
+            // de tentar o subtitlecat.com.
+            Console.WriteLine($"  [aviso] falha ao pesquisar no OpenSubtitles: {ex.Message}");
+            openSubtitles = new List<ReadySubtitle>();
+        }
+
+        foreach (var subtitle in openSubtitles)
+            yield return subtitle;
+
+        Console.WriteLine($"\n--- {SubtitleCatClient.SourceName} ---");
+        await foreach (var subtitle in SubtitleCatClient.FindReadySubtitlesAsync(http, fileNameNoExt))
+            yield return subtitle;
+    }
+
+    private static async Task DownloadAndSaveAsync(HttpClient http, ReadySubtitle subtitle, string destPath, string label)
+    {
+        Console.WriteLine($"{label} ({subtitle.Source}): {subtitle.Url}");
+        var srtText = await subtitle.DownloadTextAsync(http);
+
+        var cleanResult = SdhCleaner.RemoveSdh(srtText);
+        if (cleanResult.BlocksModified > 0 || cleanResult.BlocksRemoved > 0)
+        {
+            Console.WriteLine($"  Removendo SDH: {cleanResult.BlocksModified} fala(s) limpa(s), " +
+                               $"{cleanResult.BlocksRemoved} bloco(s) 100% SDH removido(s).");
+        }
+
+        await File.WriteAllTextAsync(destPath, cleanResult.Srt, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
     }
 
     private static int RunCleanAlts(string videoPath)

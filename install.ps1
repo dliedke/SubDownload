@@ -18,7 +18,7 @@
 $ErrorActionPreference = 'Stop'
 
 $root       = $PSScriptRoot
-$projectDir = Join-Path $root 'src\SubDownload'
+$projectDir = $root
 $installDir = Join-Path $env:LOCALAPPDATA 'SubDownload'
 $exeName    = 'SubDownload.exe'
 

@@ -9,8 +9,8 @@
     <AssemblyName>SubDownload</AssemblyName>
     <InvariantGlobalization>false</InvariantGlobalization>
     <Product>SubDownload</Product>
-    <Description>Baixa legenda em portugues (Brasil) do subtitlecat.com para o arquivo de video selecionado no Explorer.</Description>
-    <ApplicationIcon>..\..\assets\SubDownload.ico</ApplicationIcon>
+    <Description>Baixa legenda em portugues (Brasil) do OpenSubtitles (ou do subtitlecat.com, se nao achar) para o arquivo de video selecionado no Explorer.</Description>
+    <ApplicationIcon>assets\SubDownload.ico</ApplicationIcon>
   </PropertyGroup>
 
 </Project>

@@ -11,27 +11,43 @@ melhor match**. Ao clicar, o app:
 
 1. Extrai o nome do filme + ano do nome do arquivo (ex:
    `Coyote.vs.Acme.2026.1080p.HEVC.x265.RMTeam.mkv` -> `Coyote.vs.Acme.2026`).
-2. Pesquisa em `https://www.subtitlecat.com/index.php?search=...`.
-3. Ordena todos os resultados por o quão parecidos são com a release local
-   (mesma tag de fonte/qualidade — CAM, TS, WEB-DL, 2160p, HEVC/x265, grupo
-   etc.), não só o título.
-4. Abre a página do candidato mais parecido e procura a legenda **Portuguese
-   (Brazil)** (`pt-BR`, com fallback para `pt`) **já pronta para download**.
-   Se esse candidato não tiver, passa para o próximo mais parecido, e assim
-   por diante — o app nunca aciona tradução (nem via Google Translate nem via
-   o botão "Translate" do site); só baixa arquivos `.srt` que já existem.
-5. Remove marcações **SDH** (legenda para surdos/deficientes auditivos) do
+2. **Primeiro tenta o OpenSubtitles**, pela API REST legada
+   (`https://rest.opensubtitles.org`, não precisa de chave nem login):
+   - pesquisa pelo **hash do arquivo de vídeo** (match exato da release, ou
+     seja, legenda já sincronizada) e pelo nome + ano;
+   - aceita só legendas `.srt` de 1 CD, do mesmo ano e cujo nome do filme
+     bate com o começo do nome do arquivo (evita outros filmes que só
+     contêm a mesma palavra no título);
+   - ordena: primeiro as que casaram pelo hash, depois as mais parecidas com
+     a release local (mesmo algoritmo abaixo);
+   - procura `pt-BR` (`pob`) e só cai para `pt` (`por`) se não houver
+     nenhuma `pob`;
+   - converte o arquivo para UTF-8 (muitas vêm em CP1252) e remove os blocos
+     de propaganda que o OpenSubtitles injeta (`www.osdb.link`,
+     `OpenSubtitles.org`).
+3. **Se o OpenSubtitles não tiver nada** (ou estiver fora do ar), pesquisa
+   em `https://www.subtitlecat.com/index.php?search=...`:
+   - ordena todos os resultados por o quão parecidos são com a release local
+     (mesma tag de fonte/qualidade — CAM, TS, WEB-DL, 2160p, HEVC/x265, grupo
+     etc.), não só o título;
+   - abre a página do candidato mais parecido e procura a legenda
+     **Portuguese (Brazil)** (`pt-BR`, com fallback para `pt`) **já pronta
+     para download**. Se esse candidato não tiver, passa para o próximo mais
+     parecido, e assim por diante — o app nunca aciona tradução (nem via
+     Google Translate nem via o botão "Translate" do site); só baixa arquivos
+     `.srt` que já existem.
+4. Remove marcações **SDH** (legenda para surdos/deficientes auditivos) do
    texto baixado — descrições de som entre colchetes/parênteses (ex:
    `[música tocando]`, `(risos)`) e prefixos de quem fala em maiúsculas (ex:
    `ANGIE:`). Funciona tanto se só parte da legenda for SDH quanto se a
    legenda inteira for (nesse caso o bloco inteiro é descartado e a
    numeração é reajustada).
-6. Salva o `.srt` na mesma pasta do vídeo, com o mesmo nome do arquivo (ex:
+5. Salva o `.srt` na mesma pasta do vídeo, com o mesmo nome do arquivo (ex:
    `Coyote.vs.Acme.2026.1080p.HEVC.x265.RMTeam.srt`), pra tocar
    automaticamente no player.
-7. Se nenhum dos candidatos pesquisados tiver pt-BR/pt pronta, o app avisa e
-   não baixa nada (não tenta traduzir).
-8. Depois de salvar, abre o vídeo automaticamente no player padrão associado
+6. Se nem o OpenSubtitles nem o subtitlecat.com tiverem pt-BR/pt pronta, o
+   app avisa e não baixa nada (não tenta traduzir).
+7. Depois de salvar, abre o vídeo automaticamente no player padrão associado
    à extensão (ex: MPC-HC), já com a legenda pronta para carregar. Se não
    conseguir abrir (nenhum player associado, etc.), só avisa e não
    interrompe o restante do processo.
@@ -41,10 +57,10 @@ Alternativas"**.
 
 ## Baixar Legendas Alternativas
 
-Faz a mesma pesquisa/ranking, mas pula o melhor match (já baixado pelo item
-acima) e baixa até 2 dos próximos mais parecidos que também tenham pt-BR/pt
-pronta — salvando como `NomeDoArquivo.1.srt`, `NomeDoArquivo.2.srt` na mesma
-pasta. Não sobrescreve nem mexe na legenda principal; o usuário troca o nome
+Faz a mesma pesquisa/ranking, mas pula a legenda mais indicada (já baixada
+pelo item acima) e baixa até 2 das próximas — na mesma ordem: OpenSubtitles
+primeiro e, se ele não tiver alternativas suficientes, subtitlecat.com —
+salvando como `NomeDoArquivo.1.srt`, `NomeDoArquivo.2.srt` na mesma pasta. Não sobrescreve nem mexe na legenda principal; o usuário troca o nome
 manualmente para `.srt` se precisar usar uma delas. Se não houver nenhuma
 alternativa disponível, o app avisa e não baixa nada.
 
@@ -59,14 +75,20 @@ e não faz nada.
 ## Estrutura
 
 ```
-src/SubDownload/
-  Program.cs             orquestração (args -> busca -> match -> download)
-  MovieNameParser.cs      extrai "título + ano" do nome do arquivo
-  SubtitleCatParser.cs    parsing do HTML do subtitlecat.com (regex)
-  ReleaseMatcher.cs       escolhe o resultado mais parecido com a release local
-  SdhCleaner.cs           remove marcações SDH do texto da legenda baixada
-install.ps1               publica o app e registra o menu de contexto (HKCU)
-uninstall.ps1              remove o menu de contexto e o app instalado
+SubDownload.csproj        projeto .NET (raiz do repo)
+Program.cs                 orquestração (args -> fontes -> download -> salva)
+ReadySubtitle.cs           legenda pronta p/ download (comum às duas fontes)
+SdhCleaner.cs              remove marcações SDH do texto da legenda baixada
+Sources/
+  OpenSubtitlesClient.cs   busca/download no OpenSubtitles (hash + nome, API legada)
+  SubtitleCatClient.cs     busca/ranking/páginas do subtitlecat.com
+  SubtitleCatParser.cs     parsing do HTML do subtitlecat.com (regex)
+Matching/
+  MovieNameParser.cs       extrai "título + ano" do nome do arquivo
+  ReleaseMatcher.cs        escolhe o resultado mais parecido com a release local
+assets/SubDownload.ico     ícone dos itens do menu de contexto
+install.ps1                publica o app e registra o menu de contexto (HKCU)
+uninstall.ps1               remove o menu de contexto e o app instalado
 ```
 
 ## Algoritmo de similaridade (`ReleaseMatcher`)
@@ -143,6 +165,9 @@ SubDownload.exe --clean-alts "C:\Filmes\Coyote.vs.Acme.2026.1080p.HEVC.x265.RMTe
 
 ## Limitações conhecidas
 
+- Usa a API REST legada do OpenSubtitles (`rest.opensubtitles.org`), que
+  não exige chave; se ela for desligada ou limitar as requisições, o app só
+  avisa e segue direto para o subtitlecat.com.
 - Depende da estrutura HTML atual do subtitlecat.com; se o site mudar o
   layout, o parsing (regex) pode precisar de ajuste.
 - Se o filme não tiver ano no nome do arquivo, a pesquisa usa o nome inteiro
