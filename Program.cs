@@ -6,6 +6,7 @@
 
 using System.Diagnostics;
 using System.Net;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.RegularExpressions;
 
@@ -40,7 +41,11 @@ internal static class Program
             return Finish(1);
         }
 
-        var videoPath = args[pathArgIndex].Trim('"');
+        // O Explorer, ao chamar o menu de contexto, substitui o caminho pelo nome curto
+        // 8.3 (ex: STARTR~1.MKV) quando o caminho completo e muito longo — a substituicao
+        // de %1 no shell32 usa um buffer de tamanho fixo, e isso acontece mesmo com o app
+        // marcado como longPathAware no manifest. Aqui reconstruimos o nome real do arquivo.
+        var videoPath = ExpandLongPath(args[pathArgIndex].Trim('"'));
 
         try
         {
@@ -333,4 +338,36 @@ internal static class Program
     }
 
     private static int Finish(int code) => code;
+
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    private static extern int GetLongPathName(string shortPath, StringBuilder longPathBuffer, int bufferLength);
+
+    /// <summary>
+    /// Troca um nome curto 8.3 (STARTR~1.MKV) pelo nome longo real do arquivo. Se o
+    /// caminho ja for o nome longo, ou se o arquivo nao existir (ex: caminho digitado
+    /// errado), devolve o valor original sem erro.
+    /// </summary>
+    private static string ExpandLongPath(string path)
+    {
+        try
+        {
+            var buffer = new StringBuilder(260);
+            var length = GetLongPathName(path, buffer, buffer.Capacity);
+            if (length > buffer.Capacity)
+            {
+                // Nome longo nao coube no buffer inicial (caminho > MAX_PATH); tenta de novo
+                // com o tamanho exato que a API pediu.
+                buffer = new StringBuilder(length);
+                length = GetLongPathName(path, buffer, buffer.Capacity);
+            }
+
+            return length > 0 && length < buffer.Capacity ? buffer.ToString() : path;
+        }
+        catch (Exception)
+        {
+            // DllNotFoundException/EntryPointNotFoundException etc. nunca devem impedir
+            // o programa de rodar com o caminho original.
+            return path;
+        }
+    }
 }
