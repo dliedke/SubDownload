@@ -72,3 +72,21 @@ têm prefixo numérico (`SubDownload1BaixarPTBR`, `SubDownload2BaixarAlts`,
 `SubDownload3ClearAlts`) porque o Explorer ordena os itens pelo nome da chave. Ao
 renomear/adicionar itens, atualize **`install.ps1` e `uninstall.ps1`** e mantenha os
 nomes antigos na lista de limpeza.
+
+`install.ps1` tem dois modos (detectados por `SubDownload.csproj` existir ou não ao
+lado do script): dentro do repo, compila com `dotnet publish`; num pacote de release
+(zip do GitHub Releases), usa o `SubDownload.exe` que já vem publicado, sem exigir
+.NET instalado. `Install.bat`/`Uninstall.bat` são wrappers de duplo clique dos `.ps1`
+(`-ExecutionPolicy Bypass`) para quem baixa o zip.
+
+## Release automático (GitHub Actions)
+
+`.github/workflows/release.yml` publica um novo GitHub Release **a cada push na
+`main`**: calcula a próxima versão (bump de patch, ex. `v1.0.0` -> `v1.0.1`), cria e
+envia a tag, compila self-contained `win-x64` e sobe o zip
+(`SubDownload.exe` + `install.ps1` + `uninstall.ps1` + `Install.bat` +
+`Uninstall.bat` + `README.md`). **Não crie/envie tags manualmente** — cada commit
+enviado para `main` já dispara isso sozinho. Para subir minor/major em vez de patch,
+disparar manualmente pela aba Actions (`workflow_dispatch`, escolhendo o bump).
+Ao mexer no conteúdo do pacote de release (ex. novo arquivo que precisa ir no zip),
+atualize a lista de `Copy-Item` no workflow junto com `install.ps1`/`uninstall.ps1`.

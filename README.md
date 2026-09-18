@@ -178,18 +178,16 @@ Dê duplo clique em **`Uninstall.bat`**, ou:
 
 ## Gerando um novo release
 
-O workflow `.github/workflows/release.yml` compila o app e publica um
-`.zip` (`SubDownload.exe` + `install.ps1` + `uninstall.ps1` + `Install.bat`
-+ `Uninstall.bat` + `README.md`) na página de Releases automaticamente
-sempre que uma tag no formato `v*` (ex: `v1.0.0`) é enviada ao GitHub:
+O workflow `.github/workflows/release.yml` é **automático**: a cada `git
+push` na `main`, ele calcula a próxima versão (incrementa o patch, ex.
+`v1.0.0` -> `v1.0.1`), cria e envia a tag correspondente, compila o app e
+publica o `.zip` (`SubDownload.exe` + `install.ps1` + `uninstall.ps1` +
+`Install.bat` + `Uninstall.bat` + `README.md`) na página de Releases — não
+é preciso criar tag manualmente.
 
-```powershell
-git tag v1.0.0
-git push origin v1.0.0
-```
-
-Também pode ser disparado manualmente pela aba **Actions** do GitHub
-(`workflow_dispatch`).
+Para subir a versão **minor** ou **major** em vez de patch, dispare o
+workflow manualmente pela aba **Actions** do GitHub
+(`workflow_dispatch`) escolhendo o tipo de incremento.
 
 ## Uso manual (sem Explorer)
 

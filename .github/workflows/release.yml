@@ -1,13 +1,25 @@
 name: Release
 
-# Publica um pacote pronto para uso (self-contained, nao exige .NET
-# instalado na maquina de destino) sempre que uma tag "v*" e criada, ou
-# manualmente via workflow_dispatch.
+# A cada push na main, calcula a proxima versao (patch bump automatico),
+# cria e envia a tag "vX.Y.Z", compila o app self-contained win-x64
+# (nao exige .NET instalado na maquina de destino) e publica o pacote
+# como GitHub Release. Tambem pode ser disparado manualmente
+# (workflow_dispatch), com opcao de escolher o tipo de bump.
 on:
   push:
-    tags:
-      - 'v*'
-  workflow_dispatch: {}
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: 'Tipo de incremento de versao'
+        required: true
+        default: patch
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
 
 permissions:
   contents: write
@@ -18,6 +30,39 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Calcular proxima versao
+        id: version
+        run: |
+          git fetch --tags --force
+          $bump = "${{ github.event.inputs.bump }}"
+          if (-not $bump) { $bump = "patch" }
+
+          $tags = git tag --list 'v*.*.*' | Where-Object { $_ -match '^v(\d+)\.(\d+)\.(\d+)$' }
+          if (-not $tags) {
+            $next = "v1.0.0"
+          } else {
+            $latest = $tags | Sort-Object { [version]($_ -replace '^v','') } | Select-Object -Last 1
+            $null = $latest -match '^v(\d+)\.(\d+)\.(\d+)$'
+            $major = [int]$Matches[1]; $minor = [int]$Matches[2]; $patch = [int]$Matches[3]
+
+            switch ($bump) {
+              'major' { $major++; $minor = 0; $patch = 0 }
+              'minor' { $minor++; $patch = 0 }
+              default { $patch++ }
+            }
+            $next = "v$major.$minor.$patch"
+          }
+
+          Write-Host "Proxima versao: $next"
+          echo "next=$next" >> $env:GITHUB_OUTPUT
+
+      - name: Criar e enviar tag
+        run: |
+          git tag ${{ steps.version.outputs.next }}
+          git push origin ${{ steps.version.outputs.next }}
 
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
@@ -37,8 +82,7 @@ jobs:
       - name: Montar pacote de release
         id: package
         run: |
-          $ver = "${{ github.ref_name }}"
-          if (-not $ver -or $ver -eq "") { $ver = "dev" }
+          $ver = "${{ steps.version.outputs.next }}"
           $pkgDir = "package\SubDownload"
           New-Item -ItemType Directory -Force -Path $pkgDir | Out-Null
           Copy-Item bin\publish\SubDownload.exe $pkgDir
@@ -54,5 +98,6 @@ jobs:
       - name: Publicar release no GitHub
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ steps.version.outputs.next }}
           files: ${{ steps.package.outputs.zip_name }}
           generate_release_notes: true
