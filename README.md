@@ -87,8 +87,10 @@ Matching/
   MovieNameParser.cs       extrai "título + ano" do nome do arquivo
   ReleaseMatcher.cs        escolhe o resultado mais parecido com a release local
 assets/SubDownload.ico     ícone dos itens do menu de contexto
-install.ps1                publica o app e registra o menu de contexto (HKCU)
+install.ps1                publica (ou reaproveita) o app e registra o menu de contexto (HKCU)
 uninstall.ps1               remove o menu de contexto e o app instalado
+Install.bat / Uninstall.bat wrappers de duplo clique para install.ps1 / uninstall.ps1
+.github/workflows/release.yml gera o pacote de release (.zip) a cada tag "v*"
 ```
 
 ## Algoritmo de similaridade (`ReleaseMatcher`)
@@ -122,6 +124,19 @@ resultado.
 
 ## Instalação
 
+### Opção 1: pacote pronto (sem precisar instalar .NET nem git)
+
+1. Baixe o `.zip` mais recente na página de
+   [Releases](../../releases) (ex: `SubDownload-v1.0.0-win-x64.zip`) e
+   extraia numa pasta qualquer.
+2. Dê duplo clique em **`Install.bat`**.
+
+O executável desse pacote já é self-contained (`win-x64`), então **não é
+necessário ter o .NET instalado** na máquina de destino — nem o SDK (que só
+é usado para compilar) nem o runtime.
+
+### Opção 2: compilar a partir do código-fonte
+
 Pré-requisito: [.NET SDK](https://dotnet.microsoft.com/download) (usado só
 para compilar; o executável final é autocontido e não exige .NET instalado
 na máquina de destino).
@@ -131,8 +146,12 @@ cd C:\GitLab\SubDownload
 .\install.ps1
 ```
 
-O script:
-- Publica `SubDownload.exe` como executável único, self-contained, `win-x64`.
+O `install.ps1` detecta automaticamente em qual dos dois cenários está
+rodando (repositório com `SubDownload.csproj` vs. pacote de release já
+publicado) e faz o que for preciso em cada um. Nos dois casos, o script:
+- Garante um `SubDownload.exe` único, self-contained, `win-x64` (compilando
+  a partir do código-fonte, ou reaproveitando o `.exe` que já veio no
+  pacote de release).
 - Copia para `%LOCALAPPDATA%\SubDownload\SubDownload.exe`.
 - Registra os três itens de menu de contexto em
   `HKCU:\Software\Classes\SystemFileAssociations` para `.mkv` e `.mp4` —
@@ -151,9 +170,26 @@ escolha **"Baixar Legenda (PT-BR)"**, **"Baixar Legendas Alternativas"** ou
 
 ## Desinstalação
 
+Dê duplo clique em **`Uninstall.bat`**, ou:
+
 ```powershell
 .\uninstall.ps1
 ```
+
+## Gerando um novo release
+
+O workflow `.github/workflows/release.yml` compila o app e publica um
+`.zip` (`SubDownload.exe` + `install.ps1` + `uninstall.ps1` + `Install.bat`
++ `Uninstall.bat` + `README.md`) na página de Releases automaticamente
+sempre que uma tag no formato `v*` (ex: `v1.0.0`) é enviada ao GitHub:
+
+```powershell
+git tag v1.0.0
+git push origin v1.0.0
+```
+
+Também pode ser disparado manualmente pela aba **Actions** do GitHub
+(`workflow_dispatch`).
 
 ## Uso manual (sem Explorer)
 

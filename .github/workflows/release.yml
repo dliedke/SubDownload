@@ -1,0 +1,58 @@
+name: Release
+
+# Publica um pacote pronto para uso (self-contained, nao exige .NET
+# instalado na maquina de destino) sempre que uma tag "v*" e criada, ou
+# manualmente via workflow_dispatch.
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Publish self-contained win-x64
+        run: |
+          dotnet publish SubDownload.csproj `
+            -c Release `
+            -r win-x64 `
+            --self-contained true `
+            -p:PublishSingleFile=true `
+            -p:IncludeNativeLibrariesForSelfExtract=true `
+            -o bin\publish
+
+      - name: Montar pacote de release
+        id: package
+        run: |
+          $ver = "${{ github.ref_name }}"
+          if (-not $ver -or $ver -eq "") { $ver = "dev" }
+          $pkgDir = "package\SubDownload"
+          New-Item -ItemType Directory -Force -Path $pkgDir | Out-Null
+          Copy-Item bin\publish\SubDownload.exe $pkgDir
+          Copy-Item install.ps1 $pkgDir
+          Copy-Item uninstall.ps1 $pkgDir
+          Copy-Item Install.bat $pkgDir
+          Copy-Item Uninstall.bat $pkgDir
+          Copy-Item README.md $pkgDir
+          $zipName = "SubDownload-$ver-win-x64.zip"
+          Compress-Archive -Path "$pkgDir\*" -DestinationPath $zipName -Force
+          echo "zip_name=$zipName" >> $env:GITHUB_OUTPUT
+
+      - name: Publicar release no GitHub
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ steps.package.outputs.zip_name }}
+          generate_release_notes: true

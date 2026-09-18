@@ -6,13 +6,17 @@
     no menu de contexto do Explorer para arquivos .mkv e .mp4.
 
 .DESCRIPTION
-    - Publica o app como um executavel unico, autocontido (nao exige .NET
-      instalado na maquina) em win-x64.
+    - Se rodar dentro do repositorio (SubDownload.csproj presente), publica o
+      app como um executavel unico, autocontido (nao exige .NET instalado na
+      maquina) em win-x64 e usa esse executavel.
+    - Se rodar a partir de um pacote de release (SubDownload.exe ja publicado
+      junto do script, sem o .csproj), pula a compilacao e usa o executavel
+      que ja veio no pacote -- nao precisa do .NET SDK instalado.
     - Copia o executavel para %LOCALAPPDATA%\SubDownload\SubDownload.exe.
     - Registra o menu de contexto em HKCU (nao precisa de administrador).
 
 .NOTES
-    Execute a partir da raiz do repositorio: .\install.ps1
+    Execute a partir da raiz do repositorio (ou do pacote de release): .\install.ps1
 #>
 
 $ErrorActionPreference = 'Stop'
@@ -21,29 +25,42 @@ $root       = $PSScriptRoot
 $projectDir = $root
 $installDir = Join-Path $env:LOCALAPPDATA 'SubDownload'
 $exeName    = 'SubDownload.exe'
+$csprojPath = Join-Path $projectDir 'SubDownload.csproj'
 
-Write-Host "==> Publicando SubDownload (self-contained, win-x64)..." -ForegroundColor Cyan
-$publishDir = Join-Path $projectDir 'bin\publish'
+if (Test-Path $csprojPath) {
+    # Modo repositorio: compila a partir do codigo-fonte.
+    Write-Host "==> Publicando SubDownload (self-contained, win-x64)..." -ForegroundColor Cyan
+    $publishDir = Join-Path $projectDir 'bin\publish'
 
-dotnet publish $projectDir `
-    -c Release `
-    -r win-x64 `
-    --self-contained true `
-    -p:PublishSingleFile=true `
-    -p:IncludeNativeLibrariesForSelfExtract=true `
-    -o $publishDir
+    dotnet publish $projectDir `
+        -c Release `
+        -r win-x64 `
+        --self-contained true `
+        -p:PublishSingleFile=true `
+        -p:IncludeNativeLibrariesForSelfExtract=true `
+        -o $publishDir
 
-if ($LASTEXITCODE -ne 0) {
-    throw "Falha ao publicar o projeto (dotnet publish retornou $LASTEXITCODE)."
+    if ($LASTEXITCODE -ne 0) {
+        throw "Falha ao publicar o projeto (dotnet publish retornou $LASTEXITCODE)."
+    }
+
+    $sourceExe = Join-Path $publishDir $exeName
+} else {
+    # Modo pacote de release: o executavel ja vem pronto junto do script.
+    Write-Host "==> Usando executavel ja publicado (pacote de release)..." -ForegroundColor Cyan
+    $sourceExe = Join-Path $root $exeName
+    if (-not (Test-Path $sourceExe)) {
+        throw "SubDownload.exe nao encontrado junto do install.ps1. Baixe o pacote de release completo."
+    }
 }
 
 Write-Host "==> Instalando em $installDir ..." -ForegroundColor Cyan
 New-Item -ItemType Directory -Force -Path $installDir | Out-Null
-Copy-Item -Path (Join-Path $publishDir $exeName) -Destination $installDir -Force
+Copy-Item -Path $sourceExe -Destination $installDir -Force
 
 $exePath = Join-Path $installDir $exeName
 if (-not (Test-Path $exePath)) {
-    throw "Executavel nao encontrado apos a publicacao: $exePath"
+    throw "Executavel nao encontrado apos a instalacao: $exePath"
 }
 
 function Register-ContextMenu {
