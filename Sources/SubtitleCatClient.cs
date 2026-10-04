@@ -40,7 +40,8 @@ internal static class SubtitleCatClient
         foreach (var rankedCandidate in ranked.Take(MaxCandidatesToCheck))
         {
             var candidate = rankedCandidate.Candidate;
-            var pageHtml = await TryGetStringAsync(http, $"{BaseUrl}/{candidate.Href}", candidate.Title);
+            var pageUrl = $"{BaseUrl}/{candidate.Href}";
+            var pageHtml = await TryGetStringAsync(http, pageUrl, candidate.Title);
             if (pageHtml is null)
                 continue;
 
@@ -59,7 +60,7 @@ internal static class SubtitleCatClient
                 : $"{BaseUrl}/{link.TrimStart('/')}";
 
             yielded++;
-            yield return new ReadySubtitle(SourceName, candidate.Title, srtUrl, DownloadTextAsync(srtUrl));
+            yield return new ReadySubtitle(SourceName, candidate.Title, srtUrl, pageUrl, DownloadTextAsync(srtUrl));
         }
 
         if (yielded == 0 && lastAvailableLangs.Count > 0)

@@ -1,5 +1,4 @@
 using System.IO.Compression;
-using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 
@@ -28,7 +27,7 @@ internal static partial class OpenSubtitlesClient
     private sealed record Result(
         string MatchedBy, string MovieName, string MovieYear, string ReleaseName,
         string SubFileName, string SubSumCD, string SubFormat, string SubBad,
-        string SubEncoding, int Downloads, string DownloadLink);
+        string SubEncoding, int Downloads, string DownloadLink, string PageLink);
 
     /// <summary>
     /// Retorna as legendas prontas, da mais indicada para a menos indicada: primeiro as
@@ -51,12 +50,11 @@ internal static partial class OpenSubtitlesClient
             var query = string.Join(' ', Tokenize(searchQuery)).ToLowerInvariant();
             results.AddRange(await SearchAsync(http, $"query-{Uri.EscapeDataString(query)}/sublanguageid-{lang}"));
 
-            var fileTokens = Tokenize(fileNameNoExt);
             var accepted = results
                 .Where(r => r.SubSumCD == "1" && r.SubBad != "1")
                 .Where(r => r.SubFormat.Equals("srt", StringComparison.OrdinalIgnoreCase))
                 .Where(r => year is null || r.MovieYear == year.ToString())
-                .Where(r => r.MatchedBy == "moviehash" || TitleMatches(fileTokens, r.MovieName))
+                .Where(r => r.MatchedBy == "moviehash" || MovieNameParser.TitleMatches(fileNameNoExt, r.MovieName))
                 .DistinctBy(r => r.DownloadLink)
                 .ToList();
 
@@ -79,6 +77,7 @@ internal static partial class OpenSubtitlesClient
                     SourceName,
                     DisplayTitle(r) + (r.MatchedBy == "moviehash" ? " [hash do video]" : ""),
                     r.DownloadLink,
+                    r.PageLink,
                     client => DownloadTextAsync(client, r)))
                 .ToList();
         }
@@ -105,7 +104,9 @@ internal static partial class OpenSubtitlesClient
                 Str(e, "MatchedBy"), Str(e, "MovieName"), Str(e, "MovieYear"), Str(e, "MovieReleaseName").Trim(),
                 Str(e, "SubFileName"), Str(e, "SubSumCD"), Str(e, "SubFormat"), Str(e, "SubBad"),
                 Str(e, "SubEncoding"), int.TryParse(Str(e, "SubDownloadsCnt"), out var n) ? n : 0,
-                Str(e, "SubDownloadLink")))
+                Str(e, "SubDownloadLink"),
+                // A API devolve a pagina com "http://"; o site redireciona pra https.
+                Str(e, "SubtitlesLink").Replace("http://", "https://")))
             .Where(r => r.DownloadLink.Length > 0)
             .ToList();
     }
@@ -124,30 +125,7 @@ internal static partial class OpenSubtitlesClient
             bytes = raw.ToArray();
         }
 
-        // O arquivo vem no encoding original de quem enviou (muitas vezes CP1252).
-        // Tenta UTF-8 estrito primeiro; se nao for UTF-8 valido, usa o encoding
-        // informado pela API (ou CP1252 como padrao).
-        string text;
-        try
-        {
-            text = new UTF8Encoding(false, throwOnInvalidBytes: true).GetString(bytes).TrimStart('\uFEFF');
-        }
-        catch (DecoderFallbackException)
-        {
-            Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
-            Encoding encoding;
-            try
-            {
-                encoding = Encoding.GetEncoding(r.SubEncoding);
-            }
-            catch (ArgumentException)
-            {
-                encoding = Encoding.GetEncoding(1252);
-            }
-            text = encoding.GetString(bytes);
-        }
-
-        return RemoveAds(text);
+        return RemoveAds(SubtitleDecoder.Decode(bytes, r.SubEncoding));
     }
 
     // Descarta os blocos inteiros de propaganda; a renumeracao dos blocos fica por conta
@@ -194,16 +172,6 @@ internal static partial class OpenSubtitlesClient
         {
             return null;
         }
-    }
-
-    // Aceita o resultado so se o nome do arquivo comeca com o nome do filme (evita que a
-    // busca "fulltext" traga outro filme que so contem a mesma palavra no titulo).
-    private static bool TitleMatches(List<string> fileTokens, string movieName)
-    {
-        var movieTokens = Tokenize(movieName);
-        return movieTokens.Count > 0
-               && movieTokens.Count <= fileTokens.Count
-               && movieTokens.Select((t, i) => t.Equals(fileTokens[i], StringComparison.OrdinalIgnoreCase)).All(eq => eq);
     }
 
     private static string DisplayTitle(Result r) =>

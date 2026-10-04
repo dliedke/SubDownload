@@ -9,9 +9,15 @@
     <AssemblyName>SubDownload</AssemblyName>
     <InvariantGlobalization>false</InvariantGlobalization>
     <Product>SubDownload</Product>
-    <Description>Baixa legenda em portugues (Brasil) do OpenSubtitles (ou do subtitlecat.com, se nao achar) para o arquivo de video selecionado no Explorer.</Description>
+    <Description>Baixa legenda em portugues (Brasil) do OpenSubtitles, SubDL ou subtitlecat.com para o arquivo de video selecionado no Explorer.</Description>
     <ApplicationIcon>assets\SubDownload.ico</ApplicationIcon>
     <ApplicationManifest>app.manifest</ApplicationManifest>
   </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Config local com chaves de API (fora do git): copiada pra pasta do build para
+         rodar direto de bin/. Na instalacao, quem copia e o install.ps1. -->
+    <None Update="SubDownload.config.json" CopyToOutputDirectory="PreserveNewest" ExcludeFromSingleFile="true" />
+  </ItemGroup>
 
 </Project>

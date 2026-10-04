@@ -25,7 +25,17 @@ melhor match**. Ao clicar, o app:
    - converte o arquivo para UTF-8 (muitas vêm em CP1252) e remove os blocos
      de propaganda que o OpenSubtitles injeta (`www.osdb.link`,
      `OpenSubtitles.org`).
-3. **Se o OpenSubtitles não tiver nada** (ou estiver fora do ar), pesquisa
+3. **Se o OpenSubtitles não tiver nada** (ou estiver fora do ar), tenta o
+   **SubDL** (`https://api.subdl.com`, acervo herdado do Subscene):
+   - precisa de uma chave de API gratuita (veja [Chave do SubDL](#chave-do-subdl));
+     sem chave, o SubDL é pulado;
+   - pesquisa pelo nome do filme + ano (sem ano, pelo nome do arquivo
+     inteiro) e confere se o título achado é mesmo o do arquivo;
+   - procura `pt-BR` (`BR_PT`) e só cai para `pt` (`PT`) se não houver
+     nenhuma `BR_PT`; ignora as legendas traduzidas por IA pelo próprio SubDL;
+   - ordena pela release mais parecida com a local (mesmo algoritmo abaixo);
+   - baixa o `.zip` e extrai o `.srt` (convertendo para UTF-8 se precisar).
+4. **Se nem o SubDL tiver** (ou estiver fora do ar), pesquisa
    em `https://www.subtitlecat.com/index.php?search=...`:
    - ordena todos os resultados por o quão parecidos são com a release local
      (mesma tag de fonte/qualidade — CAM, TS, WEB-DL, 2160p, HEVC/x265, grupo
@@ -36,21 +46,33 @@ melhor match**. Ao clicar, o app:
      parecido, e assim por diante — o app nunca aciona tradução (nem via
      Google Translate nem via o botão "Translate" do site); só baixa arquivos
      `.srt` que já existem.
-4. Remove marcações **SDH** (legenda para surdos/deficientes auditivos) do
+5. Remove marcações **SDH** (legenda para surdos/deficientes auditivos) do
    texto baixado — descrições de som entre colchetes/parênteses (ex:
    `[música tocando]`, `(risos)`) e prefixos de quem fala em maiúsculas (ex:
    `ANGIE:`). Funciona tanto se só parte da legenda for SDH quanto se a
    legenda inteira for (nesse caso o bloco inteiro é descartado e a
    numeração é reajustada).
-5. Salva o `.srt` na mesma pasta do vídeo, com o mesmo nome do arquivo (ex:
+6. Salva o `.srt` na mesma pasta do vídeo, com o mesmo nome do arquivo (ex:
    `Coyote.vs.Acme.2026.1080p.HEVC.x265.RMTeam.srt`), pra tocar
    automaticamente no player.
-6. Se nem o OpenSubtitles nem o subtitlecat.com tiverem pt-BR/pt pronta, o
-   app avisa e não baixa nada (não tenta traduzir).
-7. Depois de salvar, abre o vídeo automaticamente no player padrão associado
+7. Se nenhuma das fontes (OpenSubtitles, SubDL, subtitlecat.com) tiver
+   pt-BR/pt pronta, o app avisa e não baixa nada (não tenta traduzir).
+8. Depois de salvar, abre o vídeo automaticamente no player padrão associado
    à extensão (ex: MPC-HC), já com a legenda pronta para carregar. Se não
    conseguir abrir (nenhum player associado, etc.), só avisa e não
    interrompe o restante do processo.
+
+No final, a janela mostra de onde veio cada legenda salva (fonte, nome da
+release, página no site e link do arquivo) e fica aberta até você apertar
+uma tecla:
+
+```
+[OK] Legenda salva em: C:\Filmes\Oppenheimer.2023.1080p.BluRay.x264-GalaxyRG.srt
+     Fonte:   SubDL
+     Legenda: Oppenheimer.2023.1080p.AMZN.WEB-DL.DDP5.1.H.264.DUAL-LCD
+     Pagina:  https://subdl.com/s/info/f1SbE8xKJ9
+     Arquivo: https://dl.subdl.com/subtitle/3215790-3232627.zip
+```
 
 Se essa legenda estiver fora de sincronia, use **"Baixar Legendas
 Alternativas"**.
@@ -59,7 +81,8 @@ Alternativas"**.
 
 Faz a mesma pesquisa/ranking, mas pula a legenda mais indicada (já baixada
 pelo item acima) e baixa até 2 das próximas — na mesma ordem: OpenSubtitles
-primeiro e, se ele não tiver alternativas suficientes, subtitlecat.com —
+primeiro e, se ele não tiver alternativas suficientes, SubDL e depois
+subtitlecat.com —
 salvando como `NomeDoArquivo.1.srt`, `NomeDoArquivo.2.srt` na mesma pasta. Não sobrescreve nem mexe na legenda principal; o usuário troca o nome
 manualmente para `.srt` se precisar usar uma delas. Se não houver nenhuma
 alternativa disponível, o app avisa e não baixa nada.
@@ -77,16 +100,20 @@ e não faz nada.
 ```
 SubDownload.csproj        projeto .NET (raiz do repo)
 Program.cs                 orquestração (args -> fontes -> download -> salva)
-ReadySubtitle.cs           legenda pronta p/ download (comum às duas fontes)
+AppConfig.cs               lê SubDownload.config.json (chave do SubDL)
+ReadySubtitle.cs           legenda pronta p/ download (comum a todas as fontes)
 SdhCleaner.cs              remove marcações SDH do texto da legenda baixada
 Sources/
   OpenSubtitlesClient.cs   busca/download no OpenSubtitles (hash + nome, API legada)
+  SubDlClient.cs           busca/download no SubDL (API com chave, .zip)
+  SubtitleDecoder.cs       bytes da legenda -> texto (UTF-8 ou CP1252)
   SubtitleCatClient.cs     busca/ranking/páginas do subtitlecat.com
   SubtitleCatParser.cs     parsing do HTML do subtitlecat.com (regex)
 Matching/
   MovieNameParser.cs       extrai "título + ano" do nome do arquivo
   ReleaseMatcher.cs        escolhe o resultado mais parecido com a release local
 assets/SubDownload.ico     ícone dos itens do menu de contexto
+SubDownload.config.example.json  modelo do SubDownload.config.json (que fica fora do git)
 install.ps1                publica (ou reaproveita) o app e registra o menu de contexto (HKCU)
 uninstall.ps1               remove o menu de contexto e o app instalado
 Install.bat / Uninstall.bat wrappers de duplo clique para install.ps1 / uninstall.ps1
@@ -168,6 +195,40 @@ Depois disso, clique com o botão direito num `.mkv` ou `.mp4` no Explorer e
 escolha **"Baixar Legenda (PT-BR)"**, **"Baixar Legendas Alternativas"** ou
 **"Limpar Legendas Alternativas (.1, .2)"**.
 
+### Chave do SubDL
+
+O SubDL só funciona com uma chave de API gratuita: crie uma conta e gere a
+chave em <https://subdl.com/panel/api>. Ela fica em
+`SubDownload.config.json`, na pasta do executável (instalado:
+`%LOCALAPPDATA%\SubDownload\SubDownload.config.json`):
+
+```json
+{
+  "subdlApiKey": "subdl_..."
+}
+```
+
+- **No instalador:** o `install.ps1` pede a chave sempre que ainda não houver
+  uma configurada (arquivo ausente ou `"subdlApiKey"` vazio) e grava o
+  arquivo. Se já houver chave instalada, ele só avisa e mantém a chave.
+  Enter pula.
+- **Código-fonte:** copie `SubDownload.config.example.json` para
+  `SubDownload.config.json` na raiz do repo e coloque a chave. Esse arquivo
+  está no `.gitignore` (nunca vai pro git) e é copiado para `bin/` no build.
+  O `install.ps1` só o copia para a pasta de instalação se ele tiver chave.
+  Uma config sem chave nunca sobrescreve uma chave já instalada.
+- **Na janela do app (reserva):** se mesmo assim faltar a chave, na primeira
+  vez que o SubDL for consultado o app explica como gerar a chave e pergunta.
+  A chave colada é salva no arquivo. **Enter** pula só desta vez; **`n`**
+  grava `"subdlDisabled": true` e o app não pergunta mais. Para reativar,
+  tire essa linha do arquivo ou cole a chave numa nova instalação.
+- A variável de ambiente `SUBDL_API_KEY`, se definida, tem prioridade sobre
+  o arquivo.
+
+Se a chave for recusada pelo SubDL, o app avisa (com o caminho do arquivo para
+corrigir) e segue para a próxima fonte. O `uninstall.ps1` apaga a pasta de
+instalação, inclusive esse arquivo.
+
 ## Desinstalação
 
 Dê duplo clique em **`Uninstall.bat`**, ou:
@@ -201,7 +262,11 @@ SubDownload.exe --clean-alts "C:\Filmes\Coyote.vs.Acme.2026.1080p.HEVC.x265.RMTe
 
 - Usa a API REST legada do OpenSubtitles (`rest.opensubtitles.org`), que
   não exige chave; se ela for desligada ou limitar as requisições, o app só
-  avisa e segue direto para o subtitlecat.com.
+  avisa e segue para as próximas fontes.
+- O SubDL exige chave de API (2.000 pesquisas/dia na chave gratuita) e
+  limita os downloads sem login a 300 por dia por IP. Algumas legendas
+  antigas de lá vêm em `.rar`, que o app não abre: se a escolhida for uma
+  delas, o download falha com erro.
 - Depende da estrutura HTML atual do subtitlecat.com; se o site mudar o
   layout, o parsing (regex) pode precisar de ajuste.
 - Se o filme não tiver ano no nome do arquivo, a pesquisa usa o nome inteiro

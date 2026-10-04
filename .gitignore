@@ -7,3 +7,6 @@ obj/
 .idea/
 publish/
 
+
+# configuracao local com chaves de API (nunca versionar)
+SubDownload.config.json

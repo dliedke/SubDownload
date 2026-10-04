@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 App console .NET 10 (C#, Windows) que baixa legenda **PT-BR** para um `.mkv`/`.mp4`,
 chamado pelo menu de contexto do Explorer. Fontes, em ordem: **OpenSubtitles**
-primeiro, **subtitlecat.com** só se faltar. Nunca aciona tradução — só baixa `.srt`
+primeiro, depois **SubDL**, e **subtitlecat.com** só se faltar. Nunca aciona tradução — só baixa `.srt`
 que já existem. Código, comentários, mensagens de console e README são em português
 (comentários no código sem acento).
 
@@ -26,7 +26,8 @@ bin/Debug/net10.0/SubDownload.exe --clean-alts "C:\Filmes\Filme.2023.1080p.mkv"
 Não há projeto de testes nem linter. Para testar de ponta a ponta, crie um arquivo
 falso (> 128 KB, senão o hash do OpenSubtitles é pulado) com nome de release real, ex.
 `Oppenheimer.2023.1080p.BluRay.x264-GalaxyRG.mkv`, e prefira `--download-alts`: o modo
-principal chama `PlayVideo`, que abre o arquivo no player padrão.
+principal chama `PlayVideo`, que abre o arquivo no player padrão. Rode com stdin
+redirecionado (`echo | ...`) para pular a pausa "Pressione qualquer tecla".
 
 ## Arquitetura
 
@@ -38,11 +39,16 @@ Os três modos (`Program.Main`):
   determinística.
 - `--clean-alts` → apaga `Nome.<n>.srt`; nunca toca `Nome.srt`.
 
+Todo caminho de saída passa por `Program.Finish`, que espera uma tecla antes de fechar
+a janela, exceto quando o stdin está redirecionado. Por isso os testes devem rodar com
+`echo | SubDownload.exe ...`, senão travam. Depois de salvar, `PrintSaved` mostra
+fonte, release, `PageUrl` (página no site) e `Url` (arquivo) de cada legenda.
+
 Fluxo de busca (`Program.CollectReadySubtitlesAsync` / `EnumerateAllSourcesAsync`):
 um `IAsyncEnumerable<ReadySubtitle>` que concatena as fontes, com dedupe por URL,
-`skip`/`take`. Como é lazy, o subtitlecat só é consultado se o OpenSubtitles não
-bastar. Falha no OpenSubtitles vira aviso (não aborta); falha na pesquisa do
-subtitlecat propaga até o `catch` do `Main`.
+`skip`/`take`. Como é lazy, cada fonte só é consultada se as anteriores não
+bastarem. Falha no OpenSubtitles/SubDL vira aviso (`TrySearchAsync`, não aborta);
+falha na pesquisa do subtitlecat propaga até o `catch` do `Main`.
 
 `ReadySubtitle` carrega um delegate `DownloadTextAsync` — cada fonte sabe baixar e
 decodificar o próprio arquivo. Depois disso, tudo passa por `SdhCleaner.RemoveSdh`
@@ -56,6 +62,20 @@ decodificar o próprio arquivo. Depois disso, tudo passa por `SdhCleaner.RemoveS
   igual e nome do filme como prefixo dos tokens do arquivo (hash match dispensa o
   nome). Download vem `.gz` em encoding original (UTF-8 estrito, senão `SubEncoding`/CP1252)
   e tem blocos de propaganda injetados (`osdb.link`, `OpenSubtitles`) removidos em `RemoveAds`.
+- **`Sources/SubDlClient`**: API `api.subdl.com/api/v1/subtitles`, **exige chave**
+  (`subdlApiKey` em `SubDownload.config.json` na pasta do exe, ou env `SUBDL_API_KEY`;
+  lida por `AppConfig`). Sem chave (ausente ou vazia), `Program.GetOrAskSubDlApiKey`
+  pergunta no console e salva a chave no arquivo; `"subdlDisabled": true` (resposta
+  `n`) faz pular sem perguntar. Com stdin redirecionado, só pula. Esse arquivo fica no
+  `.gitignore` e nunca deve ser commitado (modelo: `SubDownload.config.example.json`);
+  o csproj o copia pra `bin/`. O `install.ps1` pede a chave sempre que não houver
+  uma válida: copia a config do repo/pacote só se ela tiver chave, senão mantém a
+  já instalada, senão pergunta (a pergunta do app é só reserva). Idiomas `BR_PT` e depois `PT`; descarta `ai_translated`. As legendas são
+  todas do primeiro item de `results`, que é validado (título + ano). O `url` vem com
+  `?api_key=` embutido: tirar a query antes de logar. **O `dl.subdl.com` devolve 403
+  (desafio do Cloudflare) para User-Agent de navegador**, por isso as requisições
+  do SubDL usam o UA `SubDownload/1.0`. O download é `.zip` com o `.srt` dentro.
+- Podnapisi foi avaliado, mas estava fora do ar em out/2026 (o domínio não resolve).
 - **`Sources/SubtitleCatClient`** + **`Sources/SubtitleCatParser`**: scraping por regex do HTML
   (sem lib de HTML). Pesquisa, ranqueia, abre até 20 páginas de candidatos procurando
   `id="download_pt-BR"` (fallback `pt`).

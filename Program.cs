@@ -1,6 +1,6 @@
 // SubDownload
-// Baixa a legenda em Portugues (Brasil) de um filme — primeiro tenta o OpenSubtitles e,
-// se nao achar, o subtitlecat.com — pesquisando pelo arquivo de video passado como
+// Baixa a legenda em Portugues (Brasil) de um filme — tenta o OpenSubtitles, depois o
+// SubDL e, se nao achar, o subtitlecat.com — pesquisando pelo arquivo de video passado como
 // argumento (integracao com o menu de contexto do Windows Explorer). Salva o .srt na
 // mesma pasta do video, com o mesmo nome do arquivo.
 
@@ -34,7 +34,7 @@ internal static class Program
 
         if (!validMode || args.Length <= pathArgIndex || string.IsNullOrWhiteSpace(args[pathArgIndex]))
         {
-            Console.WriteLine("=== SubDownload - legenda PT-BR (OpenSubtitles / subtitlecat.com) ===\n");
+            Console.WriteLine("=== SubDownload - legenda PT-BR (OpenSubtitles / SubDL / subtitlecat.com) ===\n");
             Console.WriteLine("Uso: SubDownload.exe \"caminho\\para\\filme.mkv\"");
             Console.WriteLine($"     SubDownload.exe {DownloadAltsFlag} \"caminho\\para\\filme.mkv\"");
             Console.WriteLine($"     SubDownload.exe {CleanAltsFlag} \"caminho\\para\\filme.mkv\"");
@@ -67,7 +67,7 @@ internal static class Program
 
     private static async Task<int> RunAsync(string videoPath)
     {
-        Console.WriteLine("=== SubDownload - legenda PT-BR (OpenSubtitles / subtitlecat.com) ===\n");
+        Console.WriteLine("=== SubDownload - legenda PT-BR (OpenSubtitles / SubDL / subtitlecat.com) ===\n");
 
         if (!File.Exists(videoPath))
         {
@@ -90,7 +90,7 @@ internal static class Program
         using var http = CreateHttpClient();
 
         // Baixa so a legenda mais indicada (na pratica, quase sempre ja serve): primeiro do
-        // OpenSubtitles e, se ele nao tiver pt-BR/pt, do subtitlecat.com (sem acionar
+        // OpenSubtitles, depois do SubDL e, se nenhum tiver pt-BR/pt, do subtitlecat.com (sem acionar
         // nenhuma traducao — so usa o que ja existe pronto). As demais so sao baixadas sob
         // demanda, pelo menu "Baixar Legendas Alternativas".
         var found = await CollectReadySubtitlesAsync(http, videoPath, fileNameNoExt, skip: 0, take: 1);
@@ -98,7 +98,7 @@ internal static class Program
         if (found.Count == 0)
         {
             Console.WriteLine();
-            Console.WriteLine("[ERRO] Nenhuma legenda em Portugues (Brasil) pronta para download no OpenSubtitles nem no subtitlecat.com.");
+            Console.WriteLine("[ERRO] Nenhuma legenda em Portugues (Brasil) pronta para download em nenhuma das fontes (OpenSubtitles, SubDL, subtitlecat.com).");
             return Finish(1);
         }
 
@@ -107,7 +107,8 @@ internal static class Program
         await DownloadAndSaveAsync(http, found[0], destPath, "Baixando legenda");
 
         Console.WriteLine();
-        Console.WriteLine($"[OK] Legenda salva em: {destPath}");
+        PrintSaved(destPath, found[0]);
+        Console.WriteLine();
         Console.WriteLine("Se ela estiver fora de sincronia, use 'Baixar Legendas Alternativas' no menu do Explorer.");
 
         PlayVideo(videoPath);
@@ -116,7 +117,7 @@ internal static class Program
 
     private static async Task<int> RunDownloadAltsAsync(string videoPath)
     {
-        Console.WriteLine("=== SubDownload - legendas alternativas (OpenSubtitles / subtitlecat.com) ===\n");
+        Console.WriteLine("=== SubDownload - legendas alternativas (OpenSubtitles / SubDL / subtitlecat.com) ===\n");
 
         if (!File.Exists(videoPath))
         {
@@ -139,7 +140,7 @@ internal static class Program
         using var http = CreateHttpClient();
 
         // Pula a mais indicada (essa ja foi baixada como legenda principal pelo outro menu)
-        // e baixa as proximas, na mesma ordem: OpenSubtitles primeiro, depois subtitlecat.com.
+        // e baixa as proximas, na mesma ordem: OpenSubtitles, SubDL e por fim subtitlecat.com.
         var found = await CollectReadySubtitlesAsync(http, videoPath, fileNameNoExt, skip: 1, take: MaxAlternates);
 
         if (found.Count == 0)
@@ -150,7 +151,7 @@ internal static class Program
         }
 
         Console.WriteLine();
-        var savedPaths = new List<string>();
+        var destPaths = new List<string>();
 
         for (var i = 0; i < found.Count; i++)
         {
@@ -158,21 +159,24 @@ internal static class Program
             // se a principal estiver fora de sincronia.
             var destPath = Path.Combine(folder, fileNameNoExt + $".{i + 1}.srt");
             await DownloadAndSaveAsync(http, found[i], destPath, $"Baixando legenda alternativa ({i + 1}/{found.Count})");
-            savedPaths.Add(destPath);
+            destPaths.Add(destPath);
+        }
+
+        for (var i = 0; i < found.Count; i++)
+        {
+            Console.WriteLine();
+            PrintSaved(destPaths[i], found[i]);
         }
 
         Console.WriteLine();
-        Console.WriteLine($"[OK] {savedPaths.Count} legenda(s) alternativa(s) salva(s):");
-        foreach (var alt in savedPaths)
-            Console.WriteLine($"  - {alt}");
         Console.WriteLine("Troque manualmente o nome pra .srt se a principal estiver fora de sincronia.");
 
         return Finish(0);
     }
 
     /// <summary>
-    /// Percorre as legendas pt-BR/pt JA PRONTAS, na ordem de preferencia (OpenSubtitles
-    /// primeiro, subtitlecat.com so se ainda faltar), pulando as primeiras
+    /// Percorre as legendas pt-BR/pt JA PRONTAS, na ordem de preferencia (OpenSubtitles,
+    /// SubDL e subtitlecat.com so se ainda faltar), pulando as primeiras
     /// <paramref name="skip"/> (ex: a que ja foi baixada como principal) e parando depois
     /// de coletar <paramref name="take"/> novas.
     /// </summary>
@@ -210,26 +214,102 @@ internal static class Program
 
     private static async IAsyncEnumerable<ReadySubtitle> EnumerateAllSourcesAsync(HttpClient http, string videoPath, string fileNameNoExt)
     {
-        Console.WriteLine($"\n--- {OpenSubtitlesClient.SourceName} ---");
-        List<ReadySubtitle> openSubtitles;
+        PrintSourceHeader(OpenSubtitlesClient.SourceName);
+        foreach (var subtitle in await TrySearchAsync(OpenSubtitlesClient.SourceName,
+                     () => OpenSubtitlesClient.FindReadySubtitlesAsync(http, videoPath, fileNameNoExt)))
+            yield return subtitle;
+
+        PrintSourceHeader(SubDlClient.SourceName);
+        var subDlApiKey = GetOrAskSubDlApiKey();
+        if (subDlApiKey is not null)
+        {
+            foreach (var subtitle in await TrySearchAsync(SubDlClient.SourceName,
+                         () => SubDlClient.FindReadySubtitlesAsync(http, subDlApiKey, fileNameNoExt)))
+                yield return subtitle;
+        }
+
+        PrintSourceHeader(SubtitleCatClient.SourceName);
+        await foreach (var subtitle in SubtitleCatClient.FindReadySubtitlesAsync(http, fileNameNoExt))
+            yield return subtitle;
+    }
+
+    // Separador bem visivel entre as fontes, com o nome centralizado.
+    private static void PrintSourceHeader(string sourceName)
+    {
+        const int Width = 60;
+        var line = new string('_', Width);
+        Console.WriteLine();
+        Console.WriteLine(line);
+        Console.WriteLine(sourceName.PadLeft((Width + sourceName.Length) / 2));
+        Console.WriteLine(line);
+        Console.WriteLine();
+    }
+
+    /// <summary>
+    /// Chave do SubDL do config. Se nao houver, explica como gerar e pergunta no console;
+    /// a chave colada e salva no config. Devolve null se o SubDL deve ser pulado.
+    /// </summary>
+    private static string? GetOrAskSubDlApiKey()
+    {
+        var config = AppConfig.Load();
+        if (config.SubDlApiKey is not null)
+            return config.SubDlApiKey;
+
+        if (config.SubDlDisabled)
+        {
+            Console.WriteLine($"  (pulando: SubDL desativado - para ativar, tire o \"subdlDisabled\" do {AppConfig.FilePath})");
+            return null;
+        }
+
+        if (Console.IsInputRedirected)
+        {
+            Console.WriteLine($"  (pulando: sem chave de API - gere uma gratis em {SubDlClient.ApiKeyUrl} e coloque em \"subdlApiKey\" no {AppConfig.FilePath})");
+            return null;
+        }
+
+        Console.WriteLine("  O SubDL precisa de uma chave de API gratuita.");
+        Console.WriteLine($"  Crie uma conta e gere a chave em {SubDlClient.ApiKeyUrl}");
+        Console.Write("  Cole a chave (ou Enter para pular desta vez, \"n\" para nunca mais perguntar): ");
+        var answer = Console.ReadLine()?.Trim().Trim('"', '\'').Trim() ?? "";
+
+        if (answer.Length == 0)
+        {
+            Console.WriteLine("  (pulando o SubDL desta vez)");
+            return null;
+        }
+
+        var disable = answer.Equals("n", StringComparison.OrdinalIgnoreCase);
         try
         {
-            openSubtitles = await OpenSubtitlesClient.FindReadySubtitlesAsync(http, videoPath, fileNameNoExt);
+            if (disable)
+                AppConfig.DisableSubDl();
+            else
+                AppConfig.SaveSubDlApiKey(answer);
+            Console.WriteLine(disable
+                ? $"  SubDL desativado. Para ativar depois, tire o \"subdlDisabled\" do {AppConfig.FilePath}"
+                : $"  Chave salva em {AppConfig.FilePath}");
         }
         catch (Exception ex)
         {
-            // Falha no OpenSubtitles (fora do ar, limite de requisicoes etc.) nao impede
-            // de tentar o subtitlecat.com.
-            Console.WriteLine($"  [aviso] falha ao pesquisar no OpenSubtitles: {ex.Message}");
-            openSubtitles = new List<ReadySubtitle>();
+            Console.WriteLine($"  [aviso] nao foi possivel salvar {AppConfig.FilePath}: {ex.Message}");
         }
 
-        foreach (var subtitle in openSubtitles)
-            yield return subtitle;
+        return disable ? null : answer;
+    }
 
-        Console.WriteLine($"\n--- {SubtitleCatClient.SourceName} ---");
-        await foreach (var subtitle in SubtitleCatClient.FindReadySubtitlesAsync(http, fileNameNoExt))
-            yield return subtitle;
+    // Falha numa fonte com API (fora do ar, limite de requisicoes, chave invalida etc.)
+    // so vira aviso e nao impede de tentar as fontes seguintes.
+    private static async Task<List<ReadySubtitle>> TrySearchAsync(string sourceName, Func<Task<List<ReadySubtitle>>> search)
+    {
+        try
+        {
+            return await search();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"  [aviso] falha ao pesquisar no {sourceName}: {ex.Message}");
+            return new List<ReadySubtitle>();
+        }
     }
 
     private static async Task DownloadAndSaveAsync(HttpClient http, ReadySubtitle subtitle, string destPath, string label)
@@ -245,6 +325,17 @@ internal static class Program
         }
 
         await File.WriteAllTextAsync(destPath, cleanResult.Srt, new UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
+    }
+
+    // Resumo de onde a legenda veio, para o usuario conferir (ou baixar outra na mao).
+    private static void PrintSaved(string destPath, ReadySubtitle subtitle)
+    {
+        Console.WriteLine($"[OK] Legenda salva em: {destPath}");
+        Console.WriteLine($"     Fonte:   {subtitle.Source}");
+        Console.WriteLine($"     Legenda: {subtitle.Title}");
+        if (subtitle.PageUrl.Length > 0)
+            Console.WriteLine($"     Pagina:  {subtitle.PageUrl}");
+        Console.WriteLine($"     Arquivo: {subtitle.Url}");
     }
 
     private static int RunCleanAlts(string videoPath)
@@ -337,7 +428,17 @@ internal static class Program
         return http;
     }
 
-    private static int Finish(int code) => code;
+    // Segura a janela aberta (o menu do Explorer abre um console que fecharia sozinho)
+    // para o usuario ler de onde veio a legenda ou o erro.
+    private static int Finish(int code)
+    {
+        if (Console.IsInputRedirected)
+            return code;
+
+        Console.WriteLine("\nPressione qualquer tecla para fechar...");
+        try { Console.ReadKey(true); } catch (InvalidOperationException) { /* sem console interativo */ }
+        return code;
+    }
 
     [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
     private static extern int GetLongPathName(string shortPath, StringBuilder longPathBuffer, int bufferLength);

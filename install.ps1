@@ -63,6 +63,52 @@ if (-not (Test-Path $exePath)) {
     throw "Executavel nao encontrado apos a instalacao: $exePath"
 }
 
+# Config local com a chave de API do SubDL (fora do git). Ordem: usa a config que
+# estiver junto do script (se tiver chave), senao mantem a chave ja instalada, senao
+# pergunta. Uma config sem chave nunca sobrescreve uma chave ja instalada.
+$configName      = 'SubDownload.config.json'
+$sourceConfig    = Join-Path $root $configName
+$installedConfig = Join-Path $installDir $configName
+
+function Read-Config([string] $Path) {
+    if (-not (Test-Path $Path)) { return $null }
+    try { return Get-Content -Path $Path -Raw | ConvertFrom-Json } catch { return $null }
+}
+
+function Get-SubDlKey([string] $Path) {
+    $config = Read-Config $Path
+    if ($null -eq $config) { return $null }
+    $key = "$($config.subdlApiKey)".Trim()
+    if ($key) { return $key } else { return $null }
+}
+
+if (Get-SubDlKey $sourceConfig) {
+    Write-Host "==> Copiando $configName (com a chave do SubDL)..." -ForegroundColor Cyan
+    Copy-Item -Path $sourceConfig -Destination $installDir -Force
+} elseif (Get-SubDlKey $installedConfig) {
+    Write-Host "==> Chave do SubDL ja configurada em $installedConfig" -ForegroundColor Cyan
+} else {
+    Write-Host ""
+    Write-Host "==> Chave de API do SubDL (opcional)" -ForegroundColor Cyan
+    Write-Host "    O SubDL e a segunda fonte de legendas e exige uma chave gratuita:"
+    Write-Host "    crie uma conta e gere a chave em https://subdl.com/panel/api"
+    Write-Host "    Se pular agora, o app pergunta de novo na primeira vez que precisar do SubDL."
+    $subDlKey = (Read-Host "    Cole a chave (ou Enter para pular)").Trim().Trim('"', "'").Trim()
+    if ($subDlKey) {
+        # Mantem as demais configuracoes ja instaladas; colar a chave reativa o SubDL
+        # caso ele tenha sido desativado pelo app ("subdlDisabled").
+        $data = [ordered]@{}
+        $existing = Read-Config $installedConfig
+        if ($null -ne $existing) {
+            foreach ($prop in $existing.PSObject.Properties) { $data[$prop.Name] = $prop.Value }
+        }
+        $data['subdlApiKey'] = $subDlKey
+        $data.Remove('subdlDisabled')
+        $data | ConvertTo-Json | Set-Content -Path $installedConfig -Encoding UTF8
+        Write-Host "    Chave salva em $installedConfig" -ForegroundColor Green
+    }
+}
+
 function Register-ContextMenu {
     param(
         [Parameter(Mandatory)] [string] $Extension,   # ex: ".mkv"
