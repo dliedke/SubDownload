@@ -50,6 +50,12 @@ um `IAsyncEnumerable<ReadySubtitle>` que concatena as fontes, com dedupe por URL
 bastarem. Falha no OpenSubtitles/SubDL vira aviso (`TrySearchAsync`, não aborta);
 falha na pesquisa do subtitlecat propaga até o `catch` do `Main`.
 
+Cada candidato é baixado já na coleta e passa por `Matching/LanguageDetector`
+(contagem de palavras funcionais pt vs en): se o arquivo não estiver em português
+(fontes às vezes rotulam inglês como pt-BR), é descartado e a busca segue para o próximo
+candidato/fonte. O `skip` só conta as aprovadas, então continua determinístico. O
+texto baixado viaja em `DownloadedSubtitle` até o `SaveAsync`.
+
 `ReadySubtitle` carrega um delegate `DownloadTextAsync` — cada fonte sabe baixar e
 decodificar o próprio arquivo. Depois disso, tudo passa por `SdhCleaner.RemoveSdh`
 (que também renumera os blocos) e é salvo em UTF-8 sem BOM.

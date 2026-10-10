@@ -13,3 +13,6 @@ internal sealed record ReadySubtitle(
     string Url,
     string PageUrl,
     Func<HttpClient, Task<string>> DownloadTextAsync);
+
+/// <summary>Legenda ja baixada e com idioma conferido (portugues), pronta para salvar.</summary>
+internal sealed record DownloadedSubtitle(ReadySubtitle Info, string Text);

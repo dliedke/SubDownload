@@ -104,10 +104,10 @@ internal static class Program
 
         Console.WriteLine();
         var destPath = Path.Combine(folder, fileNameNoExt + ".srt");
-        await DownloadAndSaveAsync(http, found[0], destPath, "Baixando legenda");
+        await SaveAsync(found[0], destPath, "Salvando legenda");
 
         Console.WriteLine();
-        PrintSaved(destPath, found[0]);
+        PrintSaved(destPath, found[0].Info);
         Console.WriteLine();
         Console.WriteLine("Se ela estiver fora de sincronia, use 'Baixar Legendas Alternativas' no menu do Explorer.");
 
@@ -158,14 +158,14 @@ internal static class Program
             // Alternativas ganham sufixo .1, .2 etc — o usuario troca manualmente pra .srt
             // se a principal estiver fora de sincronia.
             var destPath = Path.Combine(folder, fileNameNoExt + $".{i + 1}.srt");
-            await DownloadAndSaveAsync(http, found[i], destPath, $"Baixando legenda alternativa ({i + 1}/{found.Count})");
+            await SaveAsync(found[i], destPath, $"Salvando legenda alternativa ({i + 1}/{found.Count})");
             destPaths.Add(destPath);
         }
 
         for (var i = 0; i < found.Count; i++)
         {
             Console.WriteLine();
-            PrintSaved(destPaths[i], found[i]);
+            PrintSaved(destPaths[i], found[i].Info);
         }
 
         Console.WriteLine();
@@ -180,10 +180,10 @@ internal static class Program
     /// <paramref name="skip"/> (ex: a que ja foi baixada como principal) e parando depois
     /// de coletar <paramref name="take"/> novas.
     /// </summary>
-    private static async Task<List<ReadySubtitle>> CollectReadySubtitlesAsync(
+    private static async Task<List<DownloadedSubtitle>> CollectReadySubtitlesAsync(
         HttpClient http, string videoPath, string fileNameNoExt, int skip, int take)
     {
-        var found = new List<ReadySubtitle>();
+        var found = new List<DownloadedSubtitle>();
         var seenUrls = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var matched = 0;
 
@@ -196,6 +196,27 @@ internal static class Program
             if (!seenUrls.Add(subtitle.Url))
                 continue;
 
+            // Baixa ja aqui pra conferir o idioma: as fontes as vezes rotulam como pt-BR
+            // um arquivo em ingles. Se nao for portugues, descarta e segue pro proximo
+            // candidato (e, esgotada a fonte, pra proxima). O skip so conta as aprovadas,
+            // entao a ordenacao continua deterministica entre as execucoes.
+            string text;
+            try
+            {
+                text = await subtitle.DownloadTextAsync(http);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"  [aviso] falha ao baixar \"{subtitle.Title}\" ({subtitle.Source}): {ex.Message}");
+                continue;
+            }
+
+            if (!LanguageDetector.IsPortuguese(text))
+            {
+                Console.WriteLine($"  (descartando \"{subtitle.Title}\" ({subtitle.Source}) - o arquivo nao esta em portugues)");
+                continue;
+            }
+
             matched++;
             if (matched <= skip)
             {
@@ -203,7 +224,7 @@ internal static class Program
                 continue;
             }
 
-            found.Add(subtitle);
+            found.Add(new DownloadedSubtitle(subtitle, text));
             Console.WriteLine($"  -> pt-BR/pt pronta ({subtitle.Source}) em: {subtitle.Title}");
             if (found.Count >= take)
                 break;
@@ -312,12 +333,11 @@ internal static class Program
         }
     }
 
-    private static async Task DownloadAndSaveAsync(HttpClient http, ReadySubtitle subtitle, string destPath, string label)
+    private static async Task SaveAsync(DownloadedSubtitle subtitle, string destPath, string label)
     {
-        Console.WriteLine($"{label} ({subtitle.Source}): {subtitle.Url}");
-        var srtText = await subtitle.DownloadTextAsync(http);
+        Console.WriteLine($"{label} ({subtitle.Info.Source}): {subtitle.Info.Url}");
 
-        var cleanResult = SdhCleaner.RemoveSdh(srtText);
+        var cleanResult = SdhCleaner.RemoveSdh(subtitle.Text);
         if (cleanResult.BlocksModified > 0 || cleanResult.BlocksRemoved > 0)
         {
             Console.WriteLine($"  Removendo SDH: {cleanResult.BlocksModified} fala(s) limpa(s), " +
