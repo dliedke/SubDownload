@@ -6,7 +6,7 @@
     no menu de contexto do Explorer para arquivos .mkv e .mp4.
 
 .DESCRIPTION
-    - Se rodar dentro do repositorio (SubDownload.csproj presente), publica o
+    - Se rodar dentro do repositorio (src\SubDownload\SubDownload.csproj presente), publica o
       app como um executavel unico, autocontido (nao exige .NET instalado na
       maquina) em win-x64 e usa esse executavel.
     - Se rodar a partir de um pacote de release (SubDownload.exe ja publicado
@@ -22,7 +22,7 @@
 $ErrorActionPreference = 'Stop'
 
 $root       = $PSScriptRoot
-$projectDir = $root
+$projectDir = Join-Path $root 'src\SubDownload'
 $installDir = Join-Path $env:LOCALAPPDATA 'SubDownload'
 $exeName    = 'SubDownload.exe'
 $csprojPath = Join-Path $projectDir 'SubDownload.csproj'
@@ -67,7 +67,8 @@ if (-not (Test-Path $exePath)) {
 # estiver junto do script (se tiver chave), senao mantem a chave ja instalada, senao
 # pergunta. Uma config sem chave nunca sobrescreve uma chave ja instalada.
 $configName      = 'SubDownload.config.json'
-$sourceConfig    = Join-Path $root $configName
+# No repo a config fica ao lado do .csproj; no pacote de release, ao lado do script.
+$sourceConfig    = Join-Path $(if (Test-Path $csprojPath) { $projectDir } else { $root }) $configName
 $installedConfig = Join-Path $installDir $configName
 
 function Read-Config([string] $Path) {

@@ -13,14 +13,14 @@ que já existem. Código, comentários, mensagens de console e README são em po
 ## Comandos
 
 ```powershell
-dotnet build                                  # build (Debug) — SubDownload.csproj está na raiz do repo
+dotnet build                                  # build (Debug) da SubDownload.slnx; o projeto fica em src/SubDownload/
 .\install.ps1                                 # publish single-file self-contained win-x64 -> %LOCALAPPDATA%\SubDownload, registra menu (HKCU) e REINICIA o Explorer
 .\uninstall.ps1                               # remove menu e app (também reinicia o Explorer)
 
 # rodar direto (após build)
-bin/Debug/net10.0/SubDownload.exe "C:\Filmes\Filme.2023.1080p.mkv"
-bin/Debug/net10.0/SubDownload.exe --download-alts "C:\Filmes\Filme.2023.1080p.mkv"
-bin/Debug/net10.0/SubDownload.exe --clean-alts "C:\Filmes\Filme.2023.1080p.mkv"
+src/SubDownload/bin/Debug/net10.0/SubDownload.exe "C:\Filmes\Filme.2023.1080p.mkv"
+src/SubDownload/bin/Debug/net10.0/SubDownload.exe --download-alts "C:\Filmes\Filme.2023.1080p.mkv"
+src/SubDownload/bin/Debug/net10.0/SubDownload.exe --clean-alts "C:\Filmes\Filme.2023.1080p.mkv"
 ```
 
 Não há projeto de testes nem linter. Para testar de ponta a ponta, crie um arquivo
@@ -31,6 +31,11 @@ zerado é visto como download incompleto e não abre o player). Rode com stdin
 redirecionado (`echo | ...`) para pular a pausa "Pressione qualquer tecla".
 
 ## Arquitetura
+
+Tudo em `src/SubDownload/` (namespace único `SubDownload`; as pastas só agrupam):
+`Config/` (AppConfig), `Sources/` (clientes das fontes), `Matching/` (nome do filme,
+ranking, idioma), `Subtitles/` (ReadySubtitle, decoder, SdhCleaner), `Video/`
+(IncompleteDownloadDetector). A `.slnx` e os scripts de instalação ficam na raiz.
 
 Os três modos (`Program.Main`):
 - **principal** → salva `Nome.srt` e abre o vídeo no player, exceto se
@@ -79,7 +84,7 @@ decodificar o próprio arquivo. Depois disso, tudo passa por `SdhCleaner.RemoveS
   pergunta no console e salva a chave no arquivo; `"subdlDisabled": true` (resposta
   `n`) faz pular sem perguntar. Com stdin redirecionado, só pula. Esse arquivo fica no
   `.gitignore` e nunca deve ser commitado (modelo: `SubDownload.config.example.json`);
-  o csproj o copia pra `bin/`. O `install.ps1` pede a chave sempre que não houver
+  fica em `src/SubDownload/` ao lado do csproj, que o copia pra `bin/`. O `install.ps1` pede a chave sempre que não houver
   uma válida: copia a config do repo/pacote só se ela tiver chave, senão mantém a
   já instalada, senão pergunta (a pergunta do app é só reserva). Idiomas `BR_PT` e depois `PT`; descarta `ai_translated`. As legendas são
   todas do primeiro item de `results`, que é validado (título + ano). O `url` vem com
@@ -104,8 +109,7 @@ têm prefixo numérico (`SubDownload1BaixarPTBR`, `SubDownload2BaixarAlts`,
 renomear/adicionar itens, atualize **`install.ps1` e `uninstall.ps1`** e mantenha os
 nomes antigos na lista de limpeza.
 
-`install.ps1` tem dois modos (detectados por `SubDownload.csproj` existir ou não ao
-lado do script): dentro do repo, compila com `dotnet publish`; num pacote de release
+`install.ps1` tem dois modos (detectados por `src\SubDownload\SubDownload.csproj` existir ou não): dentro do repo, compila com `dotnet publish`; num pacote de release
 (zip do GitHub Releases), usa o `SubDownload.exe` que já vem publicado, sem exigir
 .NET instalado. `Install.bat`/`Uninstall.bat` são wrappers de duplo clique dos `.ps1`
 (`-ExecutionPolicy Bypass`) para quem baixa o zip.

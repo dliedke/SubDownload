@@ -101,26 +101,34 @@ e não faz nada.
 ## Estrutura
 
 ```
-SubDownload.csproj        projeto .NET (raiz do repo)
-Program.cs                 orquestração (args -> fontes -> download -> salva)
-AppConfig.cs               lê SubDownload.config.json (chave do SubDL)
-ReadySubtitle.cs           legenda pronta p/ download (comum a todas as fontes)
-SdhCleaner.cs              remove marcações SDH do texto da legenda baixada
-Sources/
-  OpenSubtitlesClient.cs   busca/download no OpenSubtitles (hash + nome, API legada)
-  SubDlClient.cs           busca/download no SubDL (API com chave, .zip)
-  SubtitleDecoder.cs       bytes da legenda -> texto (UTF-8 ou CP1252)
-  SubtitleCatClient.cs     busca/ranking/páginas do subtitlecat.com
-  SubtitleCatParser.cs     parsing do HTML do subtitlecat.com (regex)
-Matching/
-  MovieNameParser.cs       extrai "título + ano" do nome do arquivo
-  ReleaseMatcher.cs        escolhe o resultado mais parecido com a release local
-assets/SubDownload.ico     ícone dos itens do menu de contexto
-SubDownload.config.example.json  modelo do SubDownload.config.json (que fica fora do git)
-install.ps1                publica (ou reaproveita) o app e registra o menu de contexto (HKCU)
-uninstall.ps1               remove o menu de contexto e o app instalado
-Install.bat / Uninstall.bat wrappers de duplo clique para install.ps1 / uninstall.ps1
-.github/workflows/release.yml gera o pacote de release (.zip) a cada tag "v*"
+SubDownload.slnx                   solução (abre no Visual Studio)
+install.ps1                        publica (ou reaproveita) o app e registra o menu de contexto (HKCU)
+uninstall.ps1                      remove o menu de contexto e o app instalado
+Install.bat / Uninstall.bat        wrappers de duplo clique para install.ps1 / uninstall.ps1
+.github/workflows/release.yml      gera o pacote de release (.zip) a cada push na main
+src/SubDownload/
+  SubDownload.csproj               projeto .NET
+  Program.cs                       orquestração (args -> fontes -> download -> salva -> player)
+  app.manifest                     manifest (longPathAware)
+  SubDownload.config.example.json  modelo do SubDownload.config.json (que fica fora do git)
+  assets/SubDownload.ico           ícone dos itens do menu de contexto
+  Config/
+    AppConfig.cs                   lê SubDownload.config.json (chave do SubDL)
+  Sources/
+    OpenSubtitlesClient.cs         busca/download no OpenSubtitles (hash + nome, API legada)
+    SubDlClient.cs                 busca/download no SubDL (API com chave, .zip)
+    SubtitleCatClient.cs           busca/ranking/páginas do subtitlecat.com
+    SubtitleCatParser.cs           parsing do HTML do subtitlecat.com (regex)
+  Matching/
+    MovieNameParser.cs             extrai "título + ano" do nome do arquivo
+    ReleaseMatcher.cs              escolhe o resultado mais parecido com a release local
+    LanguageDetector.cs            confere se a legenda baixada está mesmo em português
+  Subtitles/
+    ReadySubtitle.cs               legenda pronta p/ download (comum a todas as fontes)
+    SubtitleDecoder.cs             bytes da legenda -> texto (UTF-8 ou CP1252)
+    SdhCleaner.cs                  remove marcações SDH do texto da legenda baixada
+  Video/
+    IncompleteDownloadDetector.cs  detecta vídeo ainda baixando (não abre o player)
 ```
 
 ## Algoritmo de similaridade (`ReleaseMatcher`)
@@ -177,7 +185,7 @@ cd C:\GitLab\SubDownload
 ```
 
 O `install.ps1` detecta automaticamente em qual dos dois cenários está
-rodando (repositório com `SubDownload.csproj` vs. pacote de release já
+rodando (repositório com `src/SubDownload/SubDownload.csproj` vs. pacote de release já
 publicado) e faz o que for preciso em cada um. Nos dois casos, o script:
 - Garante um `SubDownload.exe` único, self-contained, `win-x64` (compilando
   a partir do código-fonte, ou reaproveitando o `.exe` que já veio no
@@ -189,7 +197,7 @@ publicado) e faz o que for preciso em cada um. Nos dois casos, o script:
   no menu (Baixar Legenda -> Baixar Legendas Alternativas -> Limpar
   Legendas Alternativas) é garantida pelo prefixo numérico no nome das
   chaves do registro.
-- Os itens do menu usam um ícone próprio (`assets/SubDownload.ico`, embutido
+- Os itens do menu usam um ícone próprio (`src/SubDownload/assets/SubDownload.ico`, embutido
   no `.exe` via `<ApplicationIcon>`) em vez do ícone genérico do executável.
 - Reinicia o Explorer no final para o novo menu de contexto aparecer sem
   precisar relogar.
@@ -216,7 +224,7 @@ chave em <https://subdl.com/panel/api>. Ela fica em
   arquivo. Se já houver chave instalada, ele só avisa e mantém a chave.
   Enter pula.
 - **Código-fonte:** copie `SubDownload.config.example.json` para
-  `SubDownload.config.json` na raiz do repo e coloque a chave. Esse arquivo
+  `SubDownload.config.json` em `src/SubDownload/` e coloque a chave. Esse arquivo
   está no `.gitignore` (nunca vai pro git) e é copiado para `bin/` no build.
   O `install.ps1` só o copia para a pasta de instalação se ele tiver chave.
   Uma config sem chave nunca sobrescreve uma chave já instalada.

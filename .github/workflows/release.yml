@@ -71,7 +71,7 @@ jobs:
 
       - name: Publish self-contained win-x64
         run: |
-          dotnet publish SubDownload.csproj `
+          dotnet publish src/SubDownload/SubDownload.csproj `
             -c Release `
             -r win-x64 `
             --self-contained true `
