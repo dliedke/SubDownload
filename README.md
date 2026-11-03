@@ -61,6 +61,9 @@ melhor match**. Ao clicar, o app:
    à extensão (ex: MPC-HC), já com a legenda pronta para carregar. Se não
    conseguir abrir (nenhum player associado, etc.), só avisa e não
    interrompe o restante do processo.
+   Se o vídeo ainda não terminou de baixar (torrent em andamento, cópia
+   pela metade), a legenda é salva mas o player não é aberto: o app avisa
+   e você abre o vídeo quando o download terminar.
 
 No final, a janela mostra de onde veio cada legenda salva (fonte, nome da
 release, página no site e link do arquivo) e fica aberta até você apertar

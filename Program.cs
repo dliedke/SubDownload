@@ -111,7 +111,20 @@ internal static class Program
         Console.WriteLine();
         Console.WriteLine("Se ela estiver fora de sincronia, use 'Baixar Legendas Alternativas' no menu do Explorer.");
 
-        PlayVideo(videoPath);
+        // A legenda serve mesmo com o video incompleto, mas o player so abre se ele ja
+        // terminou de baixar/copiar.
+        var incomplete = IncompleteDownloadDetector.Check(videoPath);
+        if (incomplete is null)
+        {
+            PlayVideo(videoPath);
+        }
+        else
+        {
+            Console.WriteLine();
+            Console.WriteLine($"[aviso] O video parece ainda nao ter terminado de baixar ({incomplete}).");
+            Console.WriteLine("        O player nao foi aberto; abra o video quando o download terminar.");
+        }
+
         return Finish(0);
     }
 

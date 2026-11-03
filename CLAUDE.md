@@ -26,13 +26,18 @@ bin/Debug/net10.0/SubDownload.exe --clean-alts "C:\Filmes\Filme.2023.1080p.mkv"
 Não há projeto de testes nem linter. Para testar de ponta a ponta, crie um arquivo
 falso (> 128 KB, senão o hash do OpenSubtitles é pulado) com nome de release real, ex.
 `Oppenheimer.2023.1080p.BluRay.x264-GalaxyRG.mkv`, e prefira `--download-alts`: o modo
-principal chama `PlayVideo`, que abre o arquivo no player padrão. Rode com stdin
+principal chama `PlayVideo`, que abre o arquivo no player padrão (um arquivo falso todo
+zerado é visto como download incompleto e não abre o player). Rode com stdin
 redirecionado (`echo | ...`) para pular a pausa "Pressione qualquer tecla".
 
 ## Arquitetura
 
 Os três modos (`Program.Main`):
-- **principal** → salva `Nome.srt` e abre o vídeo no player.
+- **principal** → salva `Nome.srt` e abre o vídeo no player, exceto se
+  `IncompleteDownloadDetector` achar que o vídeo ainda está baixando: cabeçalho MKV
+  (tamanho do Segment) ou MP4 (caixa do topo) maior que o arquivo, arquivo esparso com
+  buracos (qBittorrent) ou bloco de 64 KB zerado em 33 amostras (pré-alocação/cópia).
+  Na dúvida/erro, considera completo.
 - `--download-alts` → pula a primeira legenda da sequência e salva até 2 como
   `Nome.1.srt`, `Nome.2.srt`. A "pulada" é recalculada por nova pesquisa (não há
   estado entre execuções), então as duas execuções dependem da ordenação ser
