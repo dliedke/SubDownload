@@ -11,6 +11,9 @@ melhor match**. Ao clicar, o app:
 
 1. Extrai o nome do filme + ano do nome do arquivo (ex:
    `Coyote.vs.Acme.2026.1080p.HEVC.x265.RMTeam.mkv` -> `Coyote.vs.Acme.2026`).
+   Em **episódio de série**, pesquisa pelo nome da série até a marcação
+   (`Breaking.Bad.S01E03.1080p...` -> `Breaking.Bad.S01E03`) e só aceita
+   legendas desse episódio (veja [Episódios de série](#episódios-de-série)).
 2. **Primeiro tenta o OpenSubtitles**, pela API REST legada
    (`https://rest.opensubtitles.org`, não precisa de chave nem login):
    - pesquisa pelo **hash do arquivo de vídeo** (match exato da release, ou
@@ -80,6 +83,31 @@ uma tecla:
 Se essa legenda estiver fora de sincronia, use **"Baixar Legendas
 Alternativas"**.
 
+## Episódios de série
+
+Se o nome do arquivo tem `SxxEyy`, as três fontes só aceitam legendas do
+mesmo episódio: no OpenSubtitles, mesma temporada/episódio e nome da série;
+no SubDL, descarta outras temporadas e, se vier o pacote da temporada inteira,
+extrai do `.zip` o `.srt` do episódio; no subtitlecat.com, só candidatos com o
+mesmo `SxxEyy`/`1x03`/`E04` (ou, em anime, o número do episódio logo depois do
+nome, ex: `[Erai-raws] Domestic na Kanojo - 03 [720p]`) e com alguma palavra
+do nome da série antes dele. Se a pesquisa `Serie S01E04` não achar, o
+subtitlecat.com é pesquisado de novo só pelo nome da série (o site corta em
+100 resultados, e essa lista vem mais focada).
+
+Quando o arquivo **começa** pelo episódio e não tem o nome da série (ex:
+`S01E03-Is It True, After All.mkv`), o nome da série sai da pasta: o texto
+antes do ano, da temporada ou da primeira tag de release. Se a pasta for só
+da temporada (`Season 1`), usa a de cima. Ex:
+
+```
+Domestic Girlfriend (2019) (Season 1) [BDRip] [1080p Dual Audio HEVC]\S01E01-Will You Do It With Me, Here.mkv
+-> Domestic Girlfriend S01E01 Will You Do It With Me Here BDRip 1080p Dual Audio HEVC
+-> pesquisa: Domestic Girlfriend S01E01
+```
+
+A legenda continua sendo salva com o nome original do arquivo.
+
 ## Baixar Legendas Alternativas
 
 Faz a mesma pesquisa/ranking, mas pula a legenda mais indicada (já baixada
@@ -120,12 +148,15 @@ src/SubDownload/
     SubtitleCatClient.cs           busca/ranking/páginas do subtitlecat.com
     SubtitleCatParser.cs           parsing do HTML do subtitlecat.com (regex)
   Matching/
-    MovieNameParser.cs             extrai "título + ano" do nome do arquivo
+    MovieNameParser.cs             extrai "título + ano" (ou "série + SxxEyy") do nome do arquivo
+    EpisodeParser.cs               reconhece/compara SxxEyy, 1x03 e numeração de anime
+    EpisodeNameResolver.cs         "S01E03-Titulo.mkv": monta o nome da série a partir da pasta
     ReleaseMatcher.cs              escolhe o resultado mais parecido com a release local
     LanguageDetector.cs            confere se a legenda baixada está mesmo em português
   Subtitles/
     ReadySubtitle.cs               legenda pronta p/ download (comum a todas as fontes)
     SubtitleDecoder.cs             bytes da legenda -> texto (UTF-8 ou CP1252)
+    AssConverter.cs                converte legenda ASS/SSA (às vezes servida como .srt) para SRT
     SdhCleaner.cs                  remove marcações SDH do texto da legenda baixada
   Video/
     IncompleteDownloadDetector.cs  detecta vídeo ainda baixando (não abre o player)

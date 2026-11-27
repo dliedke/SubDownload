@@ -73,6 +73,8 @@ internal static partial class ReleaseMatcher
         return unionWeight == 0 ? 0 : intersectionWeight / unionWeight;
     }
 
+    public static bool IsReleaseTag(string token) => ReleaseTags.Contains(token);
+
     private static double Weight(string token) => ReleaseTags.Contains(token) ? 3.0 : 1.0;
 
     private static HashSet<string> Tokenize(string s) =>

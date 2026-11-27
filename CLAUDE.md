@@ -67,7 +67,11 @@ candidato/fonte. O `skip` só conta as aprovadas, então continua determinístic
 texto baixado viaja em `DownloadedSubtitle` até o `SaveAsync`.
 
 `ReadySubtitle` carrega um delegate `DownloadTextAsync` — cada fonte sabe baixar e
-decodificar o próprio arquivo. Depois disso, tudo passa por `SdhCleaner.RemoveSdh`
+decodificar o próprio arquivo. Na coleta, antes do `LanguageDetector`, o texto passa por
+`Subtitles/AssConverter` (o subtitlecat às vezes serve `.ass` com extensão `.srt`,
+traduzido por máquina inclusive nos rótulos/pontuação dos campos — parsing tolerante) e é
+descartado se não tiver nenhum `-->` (página de erro etc., senão sairia `.srt` vazio).
+Depois disso, tudo passa por `SdhCleaner.RemoveSdh`
 (que também renumera os blocos) e é salvo em UTF-8 sem BOM.
 
 - **`Sources/OpenSubtitlesClient`**: API REST **legada** `rest.opensubtitles.org` (sem chave;
@@ -98,8 +102,20 @@ decodificar o próprio arquivo. Depois disso, tudo passa por `SdhCleaner.RemoveS
 - **`Matching/ReleaseMatcher`**: Jaccard ponderado entre tokens do nome do arquivo e do título
   do candidato; tags de release (`cam`, `1080p`, `x265`, `bluray`…) pesam 3×. Usado
   pelas duas fontes.
-- **`Matching/MovieNameParser`**: query = nome do arquivo até o ano (`Filme.2023`); sem ano,
-  usa o nome inteiro.
+- **`Matching/MovieNameParser`**: query = nome do arquivo até o ano (`Filme.2023`); com
+  `SxxEyy`, até o fim da marcação (`Serie.S01E03`, tem prioridade sobre o ano); sem nenhum
+  dos dois, usa o nome inteiro.
+- **Episódios** (`Matching/EpisodeParser`, `Matching/EpisodeNameResolver`): arquivo que
+  *começa* com `SxxEyy` (`S01E03-Titulo.mkv`) ganha o nome da série tirado da pasta (texto
+  antes de ano/temporada/tag de release; pasta só de temporada → sobe uma), e esse nome
+  montado é o que vai para as fontes (`Program.CollectReadySubtitlesAsync`); o `.srt`
+  continua com o nome original. Com `SxxEyy`, as fontes filtram o episódio: OpenSubtitles
+  por `SeriesSeason`/`SeriesEpisode` + série (o `MovieName` vem `"Serie" Titulo`); SubDL
+  descarta outras temporadas e pega no `.zip` do pacote o `.srt` do episódio; subtitlecat
+  exige o mesmo episódio (`SxxEyy`, `1x03`, `E04`/`Ep04` só com episódio, ou número absoluto
+  de anime antes de ano/tag) e uma palavra da série antes da marcação. O subtitlecat faz uma
+  2ª pesquisa só com o nome da série (lazy: só se a 1ª não bastar; candidatos já vistos são
+  pulados), porque o site corta em 100 resultados.
 
 ## Instalador
 

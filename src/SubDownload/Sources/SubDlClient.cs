@@ -22,7 +22,8 @@ internal static class SubDlClient
 
     private const string SiteUrl = "https://subdl.com";
 
-    private sealed record Result(string ReleaseName, string Url, string PageUrl, List<string> Releases);
+    private sealed record Result(string ReleaseName, string Url, string PageUrl, List<string> Releases,
+        int? Season, int? Episode, int? EpisodeFrom, int? EpisodeEnd);
 
     /// <summary>
     /// Retorna as legendas prontas, da mais parecida com o nome do arquivo para a menos
@@ -31,6 +32,7 @@ internal static class SubDlClient
     public static async Task<List<ReadySubtitle>> FindReadySubtitlesAsync(HttpClient http, string apiKey, string fileNameNoExt)
     {
         var year = MovieNameParser.TryGetYear(fileNameNoExt);
+        var episode = EpisodeParser.TryParse(fileNameNoExt);
 
         // Com ano: pesquisa pelo nome do filme + ano. Sem ano (ex: serie "Nome.S01E02"),
         // deixa o SubDL interpretar o nome do arquivo inteiro.
@@ -41,6 +43,11 @@ internal static class SubDlClient
         foreach (var lang in new[] { "BR_PT", "PT" })
         {
             var results = await SearchAsync(http, apiKey, $"{query}&languages={lang}&releases=1&subs_per_page=30", fileNameNoExt, year);
+
+            // Para serie, o SubDL devolve tambem outras temporadas e pacotes da temporada
+            // inteira: fica so com o que pode conter o episodio.
+            if (episode is { } ep)
+                results = results.Where(r => MayContain(r, ep)).ToList();
             if (results.Count == 0)
             {
                 Console.WriteLine($"  (nenhuma legenda \"{lang}\" encontrada no SubDL)");
@@ -64,7 +71,7 @@ internal static class SubDlClient
                 {
                     var url = DownloadBaseUrl + r.Candidate.Href;
                     return new ReadySubtitle(SourceName, r.Candidate.Title, url, pageByUrl[r.Candidate.Href],
-                        client => DownloadTextAsync(client, url));
+                        client => DownloadTextAsync(client, url, episode));
                 })
                 .ToList();
         }
@@ -126,13 +133,25 @@ internal static class SubDlClient
                 SiteUrl + Str(e, "subtitlePage"),
                 e.TryGetProperty("releases", out var rel) && rel.ValueKind == JsonValueKind.Array
                     ? rel.EnumerateArray().Where(x => x.ValueKind == JsonValueKind.String).Select(x => x.GetString()!.Trim()).ToList()
-                    : new List<string>()))
+                    : new List<string>(),
+                Int(e, "season"), Int(e, "episode"), Int(e, "episode_from"), Int(e, "episode_end")))
             .Where(r => r.Url.Length > 0)
             .DistinctBy(r => r.Url)
             .ToList();
     }
 
-    private static async Task<string> DownloadTextAsync(HttpClient http, string url)
+    private static bool MayContain(Result r, EpisodeNumber ep)
+    {
+        if (r.Season is { } season && season != ep.Season)
+            return false;
+        if (r.Episode is { } episode and > 0 && episode != ep.Episode)
+            return false;
+        if (r.EpisodeFrom is { } from and > 0 && r.EpisodeEnd is { } end and > 0 && (ep.Episode < from || ep.Episode > end))
+            return false;
+        return true;
+    }
+
+    private static async Task<string> DownloadTextAsync(HttpClient http, string url, EpisodeNumber? episode)
     {
         using var request = new HttpRequestMessage(HttpMethod.Get, url);
         request.Headers.UserAgent.ParseAdd(UserAgent);
@@ -144,18 +163,37 @@ internal static class SubDlClient
             throw new InvalidDataException("o SubDL devolveu um arquivo que nao e .zip (provavelmente .rar, nao suportado).");
 
         using var zip = new ZipArchive(new MemoryStream(bytes));
-        var entry = zip.Entries
+        var srts = zip.Entries
             .Where(e => e.FullName.EndsWith(".srt", StringComparison.OrdinalIgnoreCase))
             .Where(e => !e.FullName.StartsWith("__MACOSX/", StringComparison.Ordinal) && !e.Name.StartsWith("._", StringComparison.Ordinal))
             .OrderBy(e => e.FullName, StringComparer.OrdinalIgnoreCase)
-            .FirstOrDefault()
-            ?? throw new InvalidDataException("o .zip do SubDL nao contem nenhum arquivo .srt.");
+            .ToList();
+        if (srts.Count == 0)
+            throw new InvalidDataException("o .zip do SubDL nao contem nenhum arquivo .srt.");
+
+        var entry = episode is { } ep ? FindEpisodeEntry(srts, ep) : srts[0];
 
         using var srt = entry.Open();
         using var raw = new MemoryStream();
         await srt.CopyToAsync(raw);
         return SubtitleDecoder.Decode(raw.ToArray());
     }
+
+    // Pacote da temporada: pega o .srt do episodio. Um .srt so, sem marcacao de outro
+    // episodio, e aceito (pacote de episodio unico com nome generico).
+    private static ZipArchiveEntry FindEpisodeEntry(List<ZipArchiveEntry> srts, EpisodeNumber ep)
+    {
+        var compared = srts
+            .Select(e => (Entry: e, Result: EpisodeParser.Compare(Path.GetFileNameWithoutExtension(e.Name), ep, out _)))
+            .ToList();
+
+        return compared.FirstOrDefault(c => c.Result == EpisodeParser.Comparison.Same).Entry
+               ?? (compared is [{ Result: not EpisodeParser.Comparison.Different } single] ? single.Entry : null)
+               ?? throw new InvalidDataException($"o .zip do SubDL nao tem o .srt do {ep.Tag}.");
+    }
+
+    private static int? Int(JsonElement e, string name) =>
+        e.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.Number && v.TryGetInt32(out var n) ? n : null;
 
     private static string Str(JsonElement e, string name) =>
         e.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() ?? "" : "";

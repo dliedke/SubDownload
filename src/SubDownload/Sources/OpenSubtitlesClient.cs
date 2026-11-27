@@ -27,7 +27,8 @@ internal static partial class OpenSubtitlesClient
     private sealed record Result(
         string MatchedBy, string MovieName, string MovieYear, string ReleaseName,
         string SubFileName, string SubSumCD, string SubFormat, string SubBad,
-        string SubEncoding, int Downloads, string DownloadLink, string PageLink);
+        string SubEncoding, int Downloads, string DownloadLink, string PageLink,
+        string SeriesSeason, string SeriesEpisode);
 
     /// <summary>
     /// Retorna as legendas prontas, da mais indicada para a menos indicada: primeiro as
@@ -38,6 +39,7 @@ internal static partial class OpenSubtitlesClient
     {
         var searchQuery = MovieNameParser.BuildSearchQuery(fileNameNoExt);
         var year = MovieNameParser.TryGetYear(fileNameNoExt);
+        var episode = EpisodeParser.TryParse(fileNameNoExt);
         var hash = TryComputeMovieHash(videoPath, out var fileSize);
 
         foreach (var lang in new[] { "pob", "por" })
@@ -54,7 +56,7 @@ internal static partial class OpenSubtitlesClient
                 .Where(r => r.SubSumCD == "1" && r.SubBad != "1")
                 .Where(r => r.SubFormat.Equals("srt", StringComparison.OrdinalIgnoreCase))
                 .Where(r => year is null || r.MovieYear == year.ToString())
-                .Where(r => r.MatchedBy == "moviehash" || MovieNameParser.TitleMatches(fileNameNoExt, r.MovieName))
+                .Where(r => r.MatchedBy == "moviehash" || IsSameTitle(r, fileNameNoExt, episode))
                 .DistinctBy(r => r.DownloadLink)
                 .ToList();
 
@@ -106,9 +108,27 @@ internal static partial class OpenSubtitlesClient
                 Str(e, "SubEncoding"), int.TryParse(Str(e, "SubDownloadsCnt"), out var n) ? n : 0,
                 Str(e, "SubDownloadLink"),
                 // A API devolve a pagina com "http://"; o site redireciona pra https.
-                Str(e, "SubtitlesLink").Replace("http://", "https://")))
+                Str(e, "SubtitlesLink").Replace("http://", "https://"),
+                Str(e, "SeriesSeason"), Str(e, "SeriesEpisode")))
             .Where(r => r.DownloadLink.Length > 0)
             .ToList();
+    }
+
+    // Filme: nome do filme no inicio do arquivo. Episodio: mesma temporada/episodio e
+    // nome da serie no inicio do arquivo; o MovieName de episodio vem como
+    // "\"Nome da Serie\" Titulo do Episodio".
+    private static bool IsSameTitle(Result r, string fileNameNoExt, EpisodeNumber? episode)
+    {
+        if (episode is not { } ep)
+            return MovieNameParser.TitleMatches(fileNameNoExt, r.MovieName);
+
+        if (r.SeriesSeason != ep.Season.ToString() || r.SeriesEpisode != ep.Episode.ToString())
+            return false;
+
+        var series = r.MovieName.StartsWith('"') && r.MovieName.IndexOf('"', 1) is var end and > 0
+            ? r.MovieName[1..end]
+            : r.MovieName;
+        return MovieNameParser.TitleMatches(fileNameNoExt, series);
     }
 
     private static async Task<string> DownloadTextAsync(HttpClient http, Result r)

@@ -200,9 +200,17 @@ internal static class Program
         var seenUrls = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var matched = 0;
 
-        Console.WriteLine($"Pesquisa: {MovieNameParser.BuildSearchQuery(fileNameNoExt)}");
+        // Episodio sem o nome da serie no arquivo ("S01E03-Titulo.mkv"): pesquisa com o
+        // nome montado a partir da pasta. O arquivo salvo continua com o nome original.
+        var searchName = EpisodeNameResolver.Resolve(videoPath, fileNameNoExt);
+        if (searchName != fileNameNoExt)
+            Console.WriteLine($"Serie:    {searchName} (nome da serie tirado da pasta)");
 
-        await foreach (var subtitle in EnumerateAllSourcesAsync(http, videoPath, fileNameNoExt))
+        Console.WriteLine($"Pesquisa: {MovieNameParser.BuildSearchQuery(searchName)}");
+        if (EpisodeParser.TryParse(searchName) is { } episode)
+            Console.WriteLine($"Episodio: {episode.Tag} (so aceita legenda desse episodio)");
+
+        await foreach (var subtitle in EnumerateAllSourcesAsync(http, videoPath, searchName))
         {
             // Evita contar/salvar a mesma legenda duas vezes (candidatos diferentes
             // podem apontar pro mesmo arquivo .srt).
@@ -221,6 +229,21 @@ internal static class Program
             catch (Exception ex)
             {
                 Console.WriteLine($"  [aviso] falha ao baixar \"{subtitle.Title}\" ({subtitle.Source}): {ex.Message}");
+                continue;
+            }
+
+            // O subtitlecat as vezes serve um .ass com extensao .srt: converte. E descarta o
+            // que nao tiver nenhuma fala com tempo (pagina de erro, arquivo quebrado), senao
+            // sairia um .srt vazio.
+            if (AssConverter.TryConvertToSrt(text) is { } converted)
+            {
+                Console.WriteLine($"  (\"{subtitle.Title}\" veio em formato ASS, convertendo para SRT)");
+                text = converted;
+            }
+
+            if (!text.Contains("-->"))
+            {
+                Console.WriteLine($"  (descartando \"{subtitle.Title}\" ({subtitle.Source}) - o arquivo nao e uma legenda valida)");
                 continue;
             }
 

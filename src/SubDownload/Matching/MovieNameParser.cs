@@ -15,6 +15,11 @@ internal static partial class MovieNameParser
 
     public static string BuildSearchQuery(string fileNameNoExt)
     {
+        // Episodio de serie: nome da serie ate a marcacao (ex: "Serie.S01E03"); as tags de
+        // release depois dela so atrapalham a pesquisa.
+        if (EpisodeParser.TryParse(fileNameNoExt, out _, out var episodeIndex, out var episodeLength))
+            return fileNameNoExt[..(episodeIndex + episodeLength)];
+
         var match = YearRegex().Match(fileNameNoExt);
         if (!match.Success)
         {
@@ -45,6 +50,27 @@ internal static partial class MovieNameParser
         var title = match.Success ? fileNameNoExt[..match.Index] : fileNameNoExt;
         return string.Join(' ', Tokenize(title));
     }
+
+    /// <summary>
+    /// Palavras do nome da serie (o que vem antes do SxxEyy), sem artigos/preposicoes,
+    /// para conferir se um candidato e da mesma serie.
+    /// </summary>
+    public static List<string> SeriesTitleWords(string fileNameNoExt) =>
+        Tokenize(SeriesPart(fileNameNoExt)).Where(t => !CommonWords.Contains(t)).ToList();
+
+    /// <summary>Nome da serie (antes do SxxEyy), com espacos: "Serie.Nome.S01E03" -> "Serie Nome".</summary>
+    public static string BuildSeriesTitle(string fileNameNoExt) =>
+        string.Join(' ', Tokenize(SeriesPart(fileNameNoExt)));
+
+    private static string SeriesPart(string fileNameNoExt) =>
+        EpisodeParser.TryParse(fileNameNoExt, out _, out var index, out _)
+            ? fileNameNoExt[..index]
+            : fileNameNoExt;
+
+    private static readonly HashSet<string> CommonWords = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "the", "a", "an", "of", "and", "to", "in", "on", "de", "da", "do", "o", "e", "no", "na",
+    };
 
     // Aceita o resultado so se o nome do arquivo comeca com o nome do filme (evita que a
     // busca "fulltext" traga outro filme que so contem a mesma palavra no titulo).
